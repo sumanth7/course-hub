@@ -47,7 +47,7 @@ export const TRACKS = [
       { slug: "storage", title: "Volumes, PVs & PVCs", status: "live", minutes: 8,
         goal: "Keep data past a container restart, and bind a claim to a volume through a StorageClass.",
         concepts: ["Volumes & emptyDir", "PersistentVolumes", "PersistentVolumeClaims", "StorageClasses"] },
-      { slug: "workloads", title: "StatefulSets, DaemonSets & Jobs", status: "planned",
+      { slug: "workloads", title: "StatefulSets, DaemonSets & Jobs", status: "live", minutes: 10,
         goal: "Pick the right workload type for a database, a per-node agent and a batch task.",
         concepts: ["StatefulSets", "DaemonSets", "Jobs", "CronJobs"] },
       { slug: "scaling", title: "Autoscaling & placement", status: "planned",
