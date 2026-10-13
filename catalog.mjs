@@ -32,7 +32,7 @@ export const TRACKS = [
       { slug: "services", title: "Pod networking & Services", status: "live", minutes: 10,
         goal: "Explain how pods reach each other, why Services exist, and how a name like my-svc resolves.",
         concepts: ["Pod networking", "Services", "Service types", "Endpoints & kube-proxy", "Cluster DNS"] },
-      { slug: "ingress", title: "Ingress & NetworkPolicy", status: "planned",
+      { slug: "ingress", title: "Ingress & NetworkPolicy", status: "live", minutes: 8,
         goal: "Route outside traffic by host and path, terminate TLS, and wall pods off from each other.",
         concepts: ["Ingress & controllers", "TLS at the edge", "NetworkPolicy"] },
       { slug: "config", title: "ConfigMaps & Secrets", status: "live", minutes: 8,
