@@ -38,7 +38,7 @@ export const TRACKS = [
       { slug: "config", title: "ConfigMaps & Secrets", status: "planned",
         goal: "Feed configuration to a pod as env vars or files, and know what a Secret does and doesn't protect.",
         concepts: ["ConfigMaps", "Secrets", "Env vars vs mounted files"] },
-      { slug: "probes", title: "Health probes", status: "planned",
+      { slug: "probes", title: "Health probes", status: "live", minutes: 8,
         goal: "Tell liveness, readiness and startup probes apart and see why a new pod waits before getting traffic.",
         concepts: ["Liveness probes", "Readiness probes", "Startup probes", "Self-healing"] },
       { slug: "resources", title: "Requests, limits & QoS", status: "planned",
