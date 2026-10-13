@@ -44,7 +44,7 @@ export const TRACKS = [
       { slug: "resources", title: "Requests, limits & QoS", status: "live", minutes: 10,
         goal: "Predict where a pod is scheduled, when it is throttled or OOM-killed, and which pods are evicted first.",
         concepts: ["Resource requests", "Resource limits", "QoS classes & eviction"] },
-      { slug: "storage", title: "Volumes, PVs & PVCs", status: "planned",
+      { slug: "storage", title: "Volumes, PVs & PVCs", status: "live", minutes: 8,
         goal: "Keep data past a container restart, and bind a claim to a volume through a StorageClass.",
         concepts: ["Volumes & emptyDir", "PersistentVolumes", "PersistentVolumeClaims", "StorageClasses"] },
       { slug: "workloads", title: "StatefulSets, DaemonSets & Jobs", status: "planned",
