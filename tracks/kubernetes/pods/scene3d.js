@@ -57,8 +57,8 @@ S.label("demo", "log-agent", { small: true, anchor: V(OPEN.x + 13, 20, OPEN.z - 
 S.label("demo", "shared volume · IP 10.244.1.9", { small: true, anchor: V(OPEN.x, 12, OPEN.z + 13), lod: 1.5 });
 part("phases", { kind: "Pod phase", title: "Phase board", zoom: 3, anchor: V(BOARD.x, 22, BOARD.z), desc: "A pod's phase: Pending while it waits for a node, ContainerCreating while images are pulled, Running, then Succeeded or Failed. A container that keeps crashing is restarted with a growing delay: CrashLoopBackOff.", yaml: "kubectl get pod demo -n dev -w" });
 own("phases", housing({ x: BOARD.x, z: BOARD.z, w: BOARD.w, d: BOARD.d, h: 10, y0: 6, plinth: false }));
-const phaseLamps = PHASES.map((ph, n) => { const l = lamp(BOARD.x - 12, 16, BOARD.z - 13 + n * 6.4, { r: 1.2, state: "off" }); own("phases", l.mesh); S.label("phases", ph, { small: true, anchor: V(BOARD.x + 2, 17, BOARD.z - 13 + n * 6.4), lod: 1.7 }); return l; });
 label("phases", "phase");
+const phaseLamps = PHASES.map((ph, n) => { const l = lamp(BOARD.x - 12, 16, BOARD.z - 13 + n * 6.4, { r: 1.2, state: "off" }); own("phases", l.mesh); S.label("phases", ph, { small: true, anchor: V(BOARD.x + 2, 17, BOARD.z - 13 + n * 6.4), lod: 1.7 }); return l; });
 
 // ---- selectors and namespaces ----
 let sel = "app=web", ns = "prod";
