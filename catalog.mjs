@@ -23,7 +23,7 @@ export const TRACKS = [
       { slug: "control-plane", title: "Inside the control plane", status: "planned",
         goal: "Follow a kubectl apply from YAML to running pod through the API server, etcd and the controllers.",
         concepts: ["API server", "etcd", "Controller manager", "Container runtime", "kubectl & manifests"] },
-      { slug: "pods", title: "Pods, labels & namespaces", status: "planned",
+      { slug: "pods", title: "Pods, labels & namespaces", status: "live", minutes: 8,
         goal: "Read a pod's lifecycle and use labels, selectors and namespaces to find and group things.",
         concepts: ["Pods (multi-container)", "Pod lifecycle & CrashLoopBackOff", "Labels & selectors", "Namespaces"] },
       { slug: "deployments", title: "Deployments & rollouts", status: "live", minutes: 10,
