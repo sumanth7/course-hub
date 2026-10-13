@@ -8,7 +8,7 @@ function card(track, lesson, n, thumbs) {
   const thumb = thumbs.has(`${track.id}-${lesson.slug}-dark`)
     ? `<img data-thumb="${base}" src="${base}-light.png" alt="" loading="lazy" width="700" height="491">`
     : `<span class="plate-empty" aria-hidden="true"><span>Fig ${n}</span></span>`;
-  const meta = live ? `<span class="chip chip-live">Live</span>${lesson.minutes ? `<span>${lesson.minutes} min</span>` : ""}` : `<span class="chip">Planned</span>`;
+  const meta = live ? `<span class="chip chip-live">Live</span>${lesson.has3d ? '<span class="chip chip-live">3D</span>' : ""}${lesson.minutes ? `<span>${lesson.minutes} min</span>` : ""}` : `<span class="chip">Planned</span>`;
   const inner = `${live ? `
       <span class="thumb">${thumb}</span>` : ""}
       <span class="body">
@@ -19,7 +19,9 @@ function card(track, lesson, n, thumbs) {
         <span class="meta">${meta}<span class="done-mark" aria-hidden="true">✓ Done</span></span>
       </span>`;
   return live
-    ? `<li><a class="card is-live" data-lesson="${id}" data-href="${track.id}/${lesson.slug}/" href="${track.id}/${lesson.slug}/">${inner}</a></li>`
+    ? lesson.has3d
+      ? `<li><a class="card is-live" data-lesson="${id}" data-3d href="${track.id}/${lesson.slug}/3d/">${inner}</a></li>`
+      : `<li><a class="card is-live" data-lesson="${id}" data-href="${track.id}/${lesson.slug}/" href="${track.id}/${lesson.slug}/">${inner}</a></li>`
     : `<li><div class="card is-planned" data-lesson="${id}">${inner}</div></li>`;
 }
 
@@ -157,7 +159,7 @@ footer { margin-top: 56px; padding-block: 24px 40px; border-top: 1px solid var(-
   function sync() {
     btn.textContent = "Theme: " + (root.dataset.theme || "system");
     var d = dark();
-    document.querySelectorAll("a.card").forEach(function (a) { a.href = a.dataset.href + (d ? "" : "index-light.html"); });
+    document.querySelectorAll("a.card[data-href]").forEach(function (a) { a.href = a.dataset.href + (d ? "" : "index-light.html"); });
     document.querySelectorAll("img[data-thumb]").forEach(function (img) { var src = img.dataset.thumb + (d ? "-dark.png" : "-light.png"); if (img.getAttribute("src") !== src) img.setAttribute("src", src); });
   }
   btn.addEventListener("click", function () {
@@ -175,7 +177,7 @@ footer { margin-top: 56px; padding-block: 24px 40px; border-top: 1px solid var(-
 }
 
 // The bar injected at the top of every lesson page: back to the hub, theme switch, mark complete, next lesson.
-export function lessonNav({ track, lesson, index, next, theme }) {
+export function lessonNav({ track, lesson, index, next, theme, threeD = false }) {
   const id = `${track.id}/${lesson.slug}`;
   const other = theme === "light" ? "index.html" : "index-light.html";
   const nextHref = next ? `../${next.slug}/${theme === "light" ? "index-light.html" : ""}` : "";
@@ -189,7 +191,7 @@ export function lessonNav({ track, lesson, index, next, theme }) {
 .ch-next{display:flex;justify-content:flex-end;margin-top:22px;font:500 13px/1 var(--anatomy-mono)}
 .ch-next a{color:var(--anatomy-strong);text-decoration:none;border:1px solid var(--anatomy-muted);border-radius:999px;padding:10px 14px}
 </style>
-<nav class="ch-nav" aria-label="Course"><a href="../../">← Course Hub</a><span class="ch-where">${esc(track.title)} · Lesson ${String(index + 1).padStart(2, "0")}</span><a href="${other}">${theme === "light" ? "Dark" : "Light"} version</a><button type="button" id="ch-done" aria-pressed="false">Mark complete</button></nav>
+<nav class="ch-nav" aria-label="Course"><a href="../../">← Course Hub</a><span class="ch-where">${esc(track.title)} · Lesson ${String(index + 1).padStart(2, "0")}</span>${threeD ? '<a href="3d/">3D version</a>' : ""}<a href="${other}">${theme === "light" ? "Dark" : "Light"} version</a><button type="button" id="ch-done" aria-pressed="false">Mark complete</button></nav>
 <script>
 (function(){var KEY="coursehub:done",ID=${JSON.stringify(id)},b=document.getElementById("ch-done"),d=[];
 try{d=JSON.parse(localStorage.getItem(KEY)||"[]")}catch(e){}

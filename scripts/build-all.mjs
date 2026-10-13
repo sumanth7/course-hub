@@ -5,30 +5,51 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SITE, TRACKS } from "../catalog.mjs";
 import { hubHtml, lessonNav, nextLink } from "./hub.mjs";
+import { page3d } from "../engine3d/page.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(ROOT, "site");
 rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT, { recursive: true });
 
-let built = 0;
+let built = 0, built3d = 0;
 for (const track of TRACKS) {
   const live = track.lessons.filter((l) => l.status === "live");
-  track.lessons.forEach((lesson, index) => {
-    if (lesson.status !== "live") return;
+  for (const [index, lesson] of track.lessons.entries()) {
+    if (lesson.status !== "live") continue;
     const script = join(ROOT, "tracks", track.id, lesson.slug, "build.mjs");
     if (!existsSync(script)) throw new Error(`${track.id}/${lesson.slug} is marked live but has no build.mjs`);
     const next = live[live.indexOf(lesson) + 1];
+    const dir = join(ROOT, "tracks", track.id, lesson.slug);
+    lesson.has3d = existsSync(join(dir, "scene3d.js"));
     for (const theme of ["dark", "light"]) {
       execFileSync(process.execPath, [script, ...(theme === "light" ? ["--light"] : [])], { stdio: "inherit" });
       const file = join(OUT, track.id, lesson.slug, theme === "light" ? "index-light.html" : "index.html");
       let html = readFileSync(file, "utf8");
-      html = html.replace('<main class="iso-page">', `<main class="iso-page">${lessonNav({ track, lesson, index, next, theme })}`);
+      html = html.replace('<main class="iso-page">', `<main class="iso-page">${lessonNav({ track, lesson, index, next, theme, threeD: lesson.has3d })}`);
       html = html.replace("</main>", `${nextLink(next, theme)}</main>`);
       writeFileSync(file, html);
     }
+    if (lesson.has3d) {
+      const meta = (await import(join(dir, "lesson3d.mjs"))).default;
+      const nextHas3d = next && existsSync(join(ROOT, "tracks", track.id, next.slug, "scene3d.js"));
+      const html = page3d({
+        ...meta,
+        title: lesson.title,
+        trackTitle: track.title,
+        lessonNo: index + 1,
+        id: `${track.id}/${lesson.slug}`,
+        twoD: "../",
+        home: "../../../",
+        next: next ? { title: next.title, href: `../../${next.slug}/${nextHas3d ? "3d/" : ""}` } : null,
+        script: readFileSync(join(dir, "scene3d.js"), "utf8"),
+      });
+      mkdirSync(join(OUT, track.id, lesson.slug, "3d"), { recursive: true });
+      writeFileSync(join(OUT, track.id, lesson.slug, "3d", "index.html"), html);
+      built3d++;
+    }
     built++;
-  });
+  }
 }
 
 const thumbsDir = join(ROOT, "assets", "thumbs");
@@ -55,4 +76,4 @@ if (existsSync(PROTO)) for (const name of readdirSync(PROTO)) {
 }
 writeFileSync(join(OUT, "index.html"), hubHtml({ site: SITE, tracks: TRACKS, thumbs }));
 writeFileSync(join(OUT, ".nojekyll"), "");
-console.log(`built ${built} lessons and the hub into site/`);
+console.log(`built ${built} lessons (${built3d} in 3D) and the hub into site/`);
