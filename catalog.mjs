@@ -26,7 +26,7 @@ export const TRACKS = [
       { slug: "pods", title: "Pods, labels & namespaces", status: "planned",
         goal: "Read a pod's lifecycle and use labels, selectors and namespaces to find and group things.",
         concepts: ["Pods (multi-container)", "Pod lifecycle & CrashLoopBackOff", "Labels & selectors", "Namespaces"] },
-      { slug: "deployments", title: "Deployments & rollouts", status: "planned",
+      { slug: "deployments", title: "Deployments & rollouts", status: "live", minutes: 10,
         goal: "Predict what maxSurge and maxUnavailable do during a rolling update, and roll back a bad release.",
         concepts: ["ReplicaSets", "Deployments", "Rolling updates", "Rollbacks"] },
       { slug: "services", title: "Pod networking & Services", status: "planned",
