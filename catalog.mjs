@@ -35,7 +35,7 @@ export const TRACKS = [
       { slug: "ingress", title: "Ingress & NetworkPolicy", status: "planned",
         goal: "Route outside traffic by host and path, terminate TLS, and wall pods off from each other.",
         concepts: ["Ingress & controllers", "TLS at the edge", "NetworkPolicy"] },
-      { slug: "config", title: "ConfigMaps & Secrets", status: "planned",
+      { slug: "config", title: "ConfigMaps & Secrets", status: "live", minutes: 8,
         goal: "Feed configuration to a pod as env vars or files, and know what a Secret does and doesn't protect.",
         concepts: ["ConfigMaps", "Secrets", "Env vars vs mounted files"] },
       { slug: "probes", title: "Health probes", status: "live", minutes: 8,
