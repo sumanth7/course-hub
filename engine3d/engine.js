@@ -143,6 +143,14 @@ export function createStage({ home = { target: [0, 30, 0], dir: [1, 0.95, 1.05],
     g.add(S.box(w, h - (plinth ? 2 : 0), d, { x, y0: y0 + (plinth ? 2 : 0), z, tone, r: 1.6 }));
     return g;
   };
+  // an open-topped box: a floor and four walls, so you can look inside
+  S.openBox = ({ x, z, w, d, h, y0 = 0, t = 1.6, tone = "hi" }) => {
+    const g = new THREE.Group();
+    g.add(S.box(w, t, d, { x, y0, z, tone: "mid", r: 0.4 }));
+    g.add(S.box(w, h, t, { x, y0, z: z - d / 2 + t / 2, tone, r: 0.3 }), S.box(w, h, t, { x, y0, z: z + d / 2 - t / 2, tone, r: 0.3 }));
+    g.add(S.box(t, h, d - 2 * t, { x: x - w / 2 + t / 2, y0, z, tone, r: 0.3 }), S.box(t, h, d - 2 * t, { x: x + w / 2 - t / 2, y0, z, tone, r: 0.3 }));
+    return g;
+  };
   // a node tray on feet, with slot outlines
   S.tray = ({ x, z, w, d, slots = [], slotSize = [25, 35], top = 11 }) => {
     const g = new THREE.Group();
