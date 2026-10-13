@@ -151,6 +151,32 @@ export function createStage({ home = { target: [0, 30, 0], dir: [1, 0.95, 1.05],
     g.add(S.box(t, h, d - 2 * t, { x: x - w / 2 + t / 2, y0, z, tone, r: 0.3 }), S.box(t, h, d - 2 * t, { x: x + w / 2 - t / 2, y0, z, tone, r: 0.3 }));
     return g;
   };
+  // a meter column: a glass shell with a fill, an optional request tick and limit cap. Values are 0..1 of its height.
+  const glass = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.12, depthWrite: false });
+  S.onTheme((p) => glass.color.set(p.edgeMid));
+  S.meter = ({ x, z, y0 = 0, h = 20, w = 3, d = 3 }) => {
+    const g = new THREE.Group();
+    const shell = S.box(w, h, d, { x, y0, z, tone: "lo", r: 0, mat: glass });
+    const fillMat = new THREE.MeshBasicMaterial();
+    const fill = new THREE.Mesh(new THREE.BoxGeometry(w - 0.6, 1, d - 0.6), fillMat);
+    fill.position.set(x, y0, z);
+    const capMat = new THREE.MeshBasicMaterial();
+    const req = new THREE.Mesh(new THREE.BoxGeometry(w + 1.2, 0.5, d + 1.2), new THREE.MeshBasicMaterial());
+    const lim = new THREE.Mesh(new THREE.BoxGeometry(w + 1.8, 0.7, d + 1.8), capMat);
+    req.position.set(x, y0, z); lim.position.set(x, y0, z);
+    g.add(shell, fill, req, lim);
+    let hot = false, v = 0;
+    const paint = () => { const p = S.PAL; fillMat.color.set(hot ? p.bad : p.edgeMid); capMat.color.set(p.lit); req.material.color.set(p.accent); };
+    S.onTheme(paint);
+    g.userData.meter = {
+      set(f) { v = Math.max(0, Math.min(1.02, f)); fill.scale.y = Math.max(0.001, v * h); fill.position.y = y0 + (v * h) / 2; fill.visible = v > 0.001; },
+      req(f) { req.visible = f != null; if (f != null) req.position.y = y0 + Math.min(1, f) * h; },
+      lim(f) { lim.visible = f != null; if (f != null) lim.position.y = y0 + Math.min(1, f) * h; },
+      hot(b) { if (b !== hot) { hot = b; paint(); } },
+    };
+    g.userData.meter.set(0); g.userData.meter.req(null); g.userData.meter.lim(null);
+    return g;
+  };
   // a node tray on feet, with slot outlines
   S.tray = ({ x, z, w, d, slots = [], slotSize = [25, 35], top = 11 }) => {
     const g = new THREE.Group();
