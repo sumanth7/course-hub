@@ -53,7 +53,7 @@ export const TRACKS = [
       { slug: "scaling", title: "Autoscaling & placement", status: "live", minutes: 10,
         goal: "Predict how replicas and nodes change with load, and steer pods onto or away from nodes.",
         concepts: ["Horizontal Pod Autoscaler", "Cluster Autoscaler", "Node selectors & affinity", "Taints & tolerations"] },
-      { slug: "security", title: "ServiceAccounts & RBAC", status: "planned",
+      { slug: "security", title: "ServiceAccounts & RBAC", status: "live", minutes: 8,
         goal: "Give a pod an identity and grant people and pods only the access they need.",
         concepts: ["ServiceAccounts", "RBAC roles & bindings", "Pod security basics"] },
       { slug: "operating", title: "Debugging & Helm", status: "planned",
