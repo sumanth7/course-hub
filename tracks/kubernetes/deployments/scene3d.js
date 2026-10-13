@@ -17,7 +17,7 @@ const gy = (n) => GAUGE.y0 + n * GAUGE.step;
 
 part("cluster", { kind: "Cluster", title: "The yard", noFrame: true, zoom: 1, anchor: V(0, 40, 12), desc: "One cluster with three nodes. A Deployment named web runs 6 replicas; each pod's tag shows the image version it runs.", yaml: "kubectl rollout status deploy/web" });
 own("cluster", S.plate({ x: 0, z: 14, w: 330, d: 190 }), ...RAIL_Z.map((z) => box(276, 3, 5, { x: -18, z })), ...RAIL_Z.flatMap((z) => [-158, 122].map((x) => box(5, 8, 10, { x, z, r: 0.8 }))));
-part("registry", { kind: "Image registry", title: "Registry hopper", anchor: V(HOP.x, BOX_H + 18, HOP.z), desc: () => `New crates come out stamped with the current template's image: <b>web:v${state.tmpl}</b>.`, yaml: () => `image: ghcr.io/acme/web:v${state.tmpl}` });
+part("registry", { kind: "Image registry", title: "Registry hopper", anchor: V(HOP.x, BOX_H + 18, HOP.z), desc: () => `New crates come out stamped with the current template's image: <b>${imageOf(state.tmpl)}</b>.`, yaml: () => `image: ${imageOf(state.tmpl)}` });
 own("registry", housing({ x: HOP.x, z: HOP.z, w: 30, d: 38, h: BOX_H, plinth: false }));
 part("bin", { kind: "Old ReplicaSet's pods", title: "Reclaim bin", anchor: V(BIN.x, BOX_H + 8, BIN.z), desc: "Old-version pods end here as the old ReplicaSet scales down. The ReplicaSet itself stays (with 0 replicas), which is what makes rollback possible.", yaml: "kubectl get rs -l app=web" });
 own("bin", housing({ x: BIN.x, z: BIN.z, w: 30, d: 38, h: BOX_H, plinth: false }));
@@ -31,9 +31,9 @@ NODES.forEach((cx, n) => {
 
 // control plane with the rollout gauge: two posts, a ceiling stop and a floor stop
 part("control", { kind: "Deployment controller", title: "Deployment web", zoom: 2.6, anchor: V(DESK.x, DESK.h + 22, DESK.z),
-  desc: () => `Replicas <b>${state.R}</b>, template <b>v${state.tmpl}</b>. During a rollout the controller keeps total pods at most replicas + maxSurge (<b>${state.R + state.S}</b>) and ready pods at least replicas − maxUnavailable (<b>${state.R - state.U}</b>).`,
-  yaml: () => `kind: Deployment\nspec:\n  replicas: ${state.R}\n  strategy:\n    rollingUpdate: { maxSurge: ${state.S}, maxUnavailable: ${state.U} }\n  template:\n    spec: { containers: [{ name: web, image: web:v${state.tmpl} }] }`,
-  actions: () => [{ label: `Release v${state.nextVer}`, run: () => release(false) }, { label: `Release v${state.nextVer} (broken)`, danger: true, run: () => release(true) }, ...(state.history.length > 1 ? [{ label: `Roll back to v${state.history[state.history.length - 2]}`, run: undo }] : [])],
+  desc: () => `Replicas <b>${state.R}</b>, template <b>${imageOf(state.tmpl)}</b>. During a rollout the controller keeps total pods at most replicas + maxSurge (<b>${state.R + state.S}</b>) and ready pods at least replicas − maxUnavailable (<b>${state.R - state.U}</b>).`,
+  yaml: () => `kind: Deployment\nspec:\n  replicas: ${state.R}\n  strategy:\n    rollingUpdate: { maxSurge: ${state.S}, maxUnavailable: ${state.U} }\n  template:\n    spec: { containers: [{ name: web, image: ${imageOf(state.tmpl)} }] }`,
+  actions: () => [{ label: `Release v${state.nextVer}`, run: () => release(false) }, { label: `Release v${state.nextVer} (broken)`, danger: true, run: () => release(true) }, ...(state.history.length > 1 ? [{ label: `Roll back to ${tagOf(state.history[state.history.length - 2])}`, run: undo }] : [])],
 });
 own("control", housing({ x: DESK.x, z: DESK.z, w: DESK.w, d: DESK.d, h: DESK.h }), ...[-20, 0, 20].map((dz) => box(1, 17, 17, { x: DESK.x + DESK.w / 2 + 0.5, y0: 7, z: dz, r: 0.3 })));
 part("gauge", { kind: "Rollout gauge", title: "Rollout gauge", zoom: 3.2, anchor: V(139, gy(10) + 6, -10),
@@ -80,8 +80,8 @@ const cargoTag = S.label("crane", "", { small: true, anchor: V(0, 0, 0) });
 
 const pods = SLOTS.map((s, i) => {
   const id = part("pod-" + i, { kind: "Pod", dynamic: true, zoom: 3.4, anchor: V(s.x, TOP + POD.h + 8, s.z),
-    title: () => { const v = state.slot[i]; return v && !v.res ? `pod (v${v.ver})` : "empty slot"; },
-    desc: () => { const v = state.slot[i]; if (!v || v.res) return "No pod here right now."; return { ready: "Running and Ready: its readiness probe passes, so it is in the Service's endpoints.", starting: "Starting: it counts toward total pods but not toward ready ones until its readiness probe passes.", crash: `Crash-looping: image v${v.ver} is broken, so this pod never becomes Ready (restarts: ${v.restarts}).`, terminating: "Terminating: removed from the Service's endpoints at once, then deleted." }[v.phase]; } });
+    title: () => { const v = state.slot[i]; return v && !v.res ? `pod (${tagOf(v.ver)})` : "empty slot"; },
+    desc: () => { const v = state.slot[i]; if (!v || v.res) return "No pod here right now."; return { ready: "Running and Ready: its readiness probe passes, so it is in the Service's endpoints.", starting: "Starting: it counts toward total pods but not toward ready ones until its readiness probe passes.", crash: v.why === "pull" ? `ImagePullBackOff: the registry has no image ${imageOf(v.ver)}, so the container never starts.` : `CrashLoopBackOff: ${imageOf(v.ver)} exits right after it starts, so this pod never becomes Ready (restarts: ${v.restarts}).`, terminating: "Terminating: removed from the Service's endpoints at once, then deleted." }[v.phase]; } });
   const g = crate();
   g.position.set(s.x, TOP, s.z);
   const l = lamp(6, POD.h, -11, { r: 1.5 });
@@ -97,15 +97,27 @@ own("registry", fresh);
 
 // ---- the rollout model (same rules as the 2D lesson) ----
 const READY_AFTER = 1.4, CRASH_AFTER = 1.1, BACKOFF = 2.4, DEADLINE = 10;
-const state = { R: 6, S: 2, U: 1, tmpl: 1, history: [1], nextVer: 2, broken: new Set(), slot: SLOTS.map(() => null), seq: 0, since: 0 };
+const state = { R: 6, S: 2, U: 1, tmpl: 1, nextVer: 2, vers: { 1: "web:v1" }, cause: { 1: "<none>" }, revOf: { 1: 1 }, rev: 1, verSeq: 1, badTags: new Set(), slot: SLOTS.map(() => null), seq: 0, since: 0, stalled: false };
+// every pod template is a version id with an image; history is the ids in revision order, oldest first
+Object.defineProperty(state, "history", { get: () => Object.keys(state.revOf).map(Number).sort((a, b) => state.revOf[a] - state.revOf[b]) });
+const imageOf = (id) => state.vers[id] || "web:v" + id;
+const tagOf = (id) => { const im = imageOf(id); return im.startsWith("web:") ? im.slice(4) : im; };
+// the registry has web:v1 … web:v9; a tag released as "broken" crashes at start; anything else can't be pulled
+const behaviour = (id) => { const im = imageOf(id), tag = im.split(":")[1] || "latest"; if (!/^web:v[1-9]$/.test(im)) return "pull"; return state.badTags.has(tag) ? "crash" : "ok"; };
+const podName = (ver, i, id) => { let h = (id * 2654435761 + i * 40503) >>> 0, out = ""; for (let k = 0; k < 5; k++) { out += "bcdfghjklmnpqrstvwxz2456789"[h % 27]; h = Math.floor(h / 27) + id * 7; } return `web-${rsName(ver).slice(4)}-${out}`; };
+const ts = () => new Date(Date.UTC(2026, 9, 13, 16, 20, 0) + performance.now()).toISOString().slice(0, 19) + "Z";
+const logTo = (v, line) => { (v.log ||= []).push(`${ts()} ${line}`); if (v.log.length > 60) v.log.shift(); };
 const isPod = (v) => v && !v.res;
+const HASH = ["6b7f", "8c2d", "4a9e", "1f7b", "9d3c", "5e8a", "7c1d", "2b6f", "3a5c", "8e1b"];
+const rsName = (v) => "web-" + HASH[(v - 1) % 10] + (v > 10 ? String(v) : "");
+function setReplicas(n) { state.R = n; state.since = 0; }
 const live = () => state.slot.map((v, i) => (isPod(v) && v.phase !== "terminating" ? { ...v, i } : null)).filter(Boolean);
 function counts() {
   const l = live(), res = state.slot.filter((v) => v && v.res), cur = state.tmpl;
   return { total: l.length + res.length, ready: l.filter((p) => p.phase === "ready").length, fresh: l.filter((p) => p.ver === cur).length + res.filter((r) => r.ver === cur).length, freshReady: l.filter((p) => p.ver === cur && p.phase === "ready").length, old: l.filter((p) => p.ver !== cur) };
 }
 const done = () => { const c = counts(); return !c.old.length && c.freshReady === state.R && c.total === state.R; };
-[0, 4, 8, 1, 5, 9].forEach((i) => { state.slot[i] = { id: ++state.seq, ver: 1, phase: "ready", t: 9, restarts: 0 }; });
+[0, 4, 8, 1, 5, 9].forEach((i) => { const id = ++state.seq; state.slot[i] = { id, name: podName(1, i, id), ver: 1, phase: "ready", t: 9, restarts: 0, old: true }; logTo(state.slot[i], "web v1 listening on :8080"); });
 function freeSlot() {
   let best = -1, load = 99;
   NODES.forEach((_, n) => { const mine = SLOTS.map((s, i) => i).filter((i) => SLOTS[i].node === n); const used = mine.filter((i) => state.slot[i]).length; const open = mine.find((i) => !state.slot[i]); if (open !== undefined && used < load) { load = used; best = open; } });
@@ -130,13 +142,17 @@ function schedule() {
   const d = decide();
   if (!d) return;
   job = d;
-  if (d.kind === "create") { state.slot[d.slot] = { res: true, ver: d.ver }; crane.ver = d.ver; plan = [{ go: [HOP.x, HOP.z] }, { y: BOX_H }, { act: "grab" }, { y: TRAVEL }, { go: "slot" }, { y: TOP }, { act: "place" }, { y: TRAVEL }]; }
-  else { const p = state.slot[d.slot]; p.phase = "terminating"; crane.ver = p.ver; plan = [{ go: "slot" }, { y: TOP }, { act: "lift" }, { y: TRAVEL }, { go: [BIN.x, BIN.z] }, { y: BOX_H }, { act: "drop" }, { y: TRAVEL }]; }
+  if (d.kind === "create") {
+    const n = state.slot.filter((v) => v && v.ver === d.ver && v.phase !== "terminating").length, id = ++state.seq, name = podName(d.ver, d.slot, id);
+    S.event("Normal", "ScalingReplicaSet", "deployment/web", `Scaled up replica set ${rsName(d.ver)} to ${n + 1}`, "deployment-controller");
+    S.event("Normal", "Scheduled", "pod/" + name, `Successfully assigned default/${name} to node-${SLOTS[d.slot].node + 1}`, "default-scheduler");
+    state.slot[d.slot] = { res: true, ver: d.ver, id, name }; crane.ver = d.ver; plan = [{ go: [HOP.x, HOP.z] }, { y: BOX_H }, { act: "grab" }, { y: TRAVEL }, { go: "slot" }, { y: TOP }, { act: "place" }, { y: TRAVEL }]; }
+  else { const p = state.slot[d.slot]; p.phase = "terminating"; S.event("Normal", "ScalingReplicaSet", "deployment/web", `Scaled down replica set ${rsName(p.ver)} to ${state.slot.filter((v) => isPod(v) && v.ver === p.ver && v.phase !== "terminating").length}`, "deployment-controller"); S.event("Normal", "Killing", "pod/" + p.name, "Stopping container web"); crane.ver = p.ver; plan = [{ go: "slot" }, { y: TOP }, { act: "lift" }, { y: TRAVEL }, { go: [BIN.x, BIN.z] }, { y: BOX_H }, { act: "drop" }, { y: TRAVEL }]; }
 }
 function act(name) {
   const s = job.slot;
   if (name === "grab") { crane.holding = true; freshY = -POD.h; }
-  if (name === "place") { crane.holding = false; state.slot[s] = { id: ++state.seq, ver: job.ver, phase: "starting", t: 0, restarts: 0 }; job = null; }
+  if (name === "place") { crane.holding = false; const r = state.slot[s]; state.slot[s] = { id: r.id, name: r.name, ver: job.ver, phase: "starting", t: 0, restarts: 0 }; started(state.slot[s]); job = null; }
   if (name === "lift") { state.slot[s] = null; crane.holding = true; state.since = 0; }
   if (name === "drop") { crane.holding = false; job = null; }
 }
@@ -148,22 +164,55 @@ function stepPlan(dt) {
   else if (st.y !== undefined) { want.hy = st.y; if (Math.abs(crane.hy - want.hy) < 0.15 && Math.abs(crane.vy) < 1.5) { plan.shift(); wait = 0.04; } }
   else if (st.act) { plan.shift(); act(st.act); wait = 0.08; }
 }
+function started(v) {
+  const how = behaviour(v.ver), ev = (type, reason, msg) => S.event(type, reason, "pod/" + v.name, msg);
+  if (how === "pull") { ev("Normal", "Pulling", `Pulling image "${imageOf(v.ver)}"`); return; }
+  if (v.restarts === 0) ev("Normal", "Pulled", `Successfully pulled image "${imageOf(v.ver)}"`);
+  ev("Normal", "Started", "Started container web");
+  logTo(v, `web ${tagOf(v.ver)} starting`);
+}
 function stepPods(dt) {
-  state.slot.forEach((v) => {
+  state.slot.forEach((v, i) => {
+    if (isPod(v) && v.killed) { v.kt += dt; if (v.kt > 0.9) state.slot[i] = null; return; }
     if (!isPod(v) || v.phase === "terminating") return;
     v.t += dt;
-    const bad = state.broken.has(v.ver);
-    if (v.phase === "starting" && !bad && v.t >= READY_AFTER) { v.phase = "ready"; state.since = 0; }
-    else if (v.phase === "starting" && bad && v.t >= CRASH_AFTER) { v.phase = "crash"; v.t = 0; v.restarts++; }
-    else if (v.phase === "crash" && v.t >= BACKOFF * Math.min(3, v.restarts)) { v.phase = "starting"; v.t = 0; }
+    const how = behaviour(v.ver), bad = how !== "ok";
+    if (v.phase === "starting" && !bad && v.t >= READY_AFTER) { v.phase = "ready"; state.since = 0; logTo(v, `web ${tagOf(v.ver)} listening on :8080`); logTo(v, "GET /ready 200 1ms"); }
+    else if (v.phase === "starting" && bad && v.t >= CRASH_AFTER) {
+      v.phase = "crash"; v.t = 0; v.why = how;
+      if (how === "pull") { v.pulls = (v.pulls || 0) + 1; S.event("Warning", "Failed", "pod/" + v.name, `Failed to pull image "${imageOf(v.ver)}": ${imageOf(v.ver)}: not found`); S.event("Warning", "Failed", "pod/" + v.name, "Error: ImagePullBackOff"); }
+      else { v.restarts++; logTo(v, "panic: config: required key DATABASE_URL is missing"); logTo(v, "exit status 1"); S.event("Warning", "BackOff", "pod/" + v.name, "Back-off restarting failed container web"); }
+    }
+    else if (v.phase === "crash" && v.t >= BACKOFF * Math.min(3, Math.max(v.restarts, v.pulls || 0))) { v.phase = "starting"; v.t = 0; started(v); }
   });
   if (done()) state.since = 0; else state.since += dt;
+  const stalled = !done() && state.since > DEADLINE;
+  if (stalled && !state.stalled) S.event("Warning", "ProgressDeadlineExceeded", "deployment/web", `ReplicaSet "${rsName(state.tmpl)}" has timed out progressing.`, "deployment-controller");
+  state.stalled = stalled;
 }
-function release(broken) { const ver = state.nextVer++; if (broken) state.broken.add(ver); state.tmpl = ver; state.history.push(ver); state.since = 0; }
-function undo() { if (state.history.length < 2) return; state.history.pop(); state.tmpl = state.history[state.history.length - 1]; state.since = 0; }
+// a new pod template: an image change reuses the ReplicaSet of an identical earlier template, a restart never does
+function setImage(image, cause, restart = false) {
+  let id = restart ? 0 : state.history.slice().reverse().find((h) => imageOf(h) === image && !state.restarted?.[h]) || 0;
+  if (id === state.tmpl && !restart) return false;
+  if (!id) { id = ++state.verSeq; state.vers[id] = image; if (restart) (state.restarted ||= {})[id] = true; }
+  const m = image.match(/^web:v(\d+)$/);
+  if (m) state.nextVer = Math.max(state.nextVer, +m[1] + 1);
+  state.tmpl = id; state.revOf[id] = ++state.rev; state.cause[id] = cause; state.since = 0;
+  return true;
+}
+function release(broken) { const tag = "v" + state.nextVer; if (broken) state.badTags.add(tag); setImage("web:" + tag, `kubectl set image deploy/web web=web:${tag}`); }
+function undo(rev) {
+  const h = state.history;
+  if (h.length < 2) return "";
+  const to = rev ? h.find((id) => state.revOf[id] === rev) : h[h.length - 2];
+  if (!to || to === state.tmpl) return "";
+  state.tmpl = to; state.revOf[to] = ++state.rev; state.since = 0;
+  S.event("Normal", "DeploymentRollback", "deployment/web", `Rolled back deployment "web" to ${imageOf(to)}`, "deployment-controller");
+  return to;
+}
 function setBounds(Sv, Uv) { Sv = Math.max(0, Math.min(3, Sv)); Uv = Math.max(0, Math.min(3, Uv)); if (Sv === 0 && Uv === 0) return; state.S = Sv; state.U = Uv; }
 
-const net = S.packets({ speed: 140, onArrive: (d) => { flash[d.slot] = 0.25; } });
+const net = S.packets({ speed: 140, onArrive: (d) => { flash[d.slot] = 0.25; const v = state.slot[d.slot]; if (isPod(v) && Math.random() < 0.5) logTo(v, `GET / 200 ${2 + Math.floor(Math.random() * 9)}ms`); } });
 const flash = SLOTS.map(() => 0);
 let spawnIn = 0, rr = 0, clock = 0;
 const gauge = { total: 6, ready: 6, ceil: 8, floor: 5 };
@@ -177,7 +226,7 @@ S.onTick((dt) => {
   gantry.position.x = crane.gx; trolley.position.set(crane.gx, 0, crane.tz); hook.position.set(crane.gx, crane.hy, crane.tz);
   cargo.visible = crane.holding;
   cargoTag.obj.position.set(crane.gx, crane.hy - POD.h / 2, crane.tz + 18);
-  S.setLabel("crane", crane.holding ? "v" + crane.ver : "", { show: crane.holding });
+  S.setLabel("crane", crane.holding ? tagOf(crane.ver) : "", { show: crane.holding });
   const top = crane.hy + 8, pos = cableGeo.attributes.position;
   pos.setXYZ(0, crane.gx - 1, top, crane.tz + 3); pos.setXYZ(1, crane.gx - 1, GIRDER_Y, crane.tz + 3); pos.setXYZ(2, crane.gx + 1, top, crane.tz - 3); pos.setXYZ(3, crane.gx + 1, GIRDER_Y, crane.tz - 3);
   pos.needsUpdate = true;
@@ -193,13 +242,13 @@ S.onTick((dt) => {
     const v = state.slot[i], on = isPod(v);
     if (on && !p.g.visible) { p.g.visible = true; p.g.scale.set(1, 0.01, 1); }
     if (!on) p.g.visible = false;
-    if (p.g.visible) p.g.scale.y = Math.min(1, p.g.scale.y + dt * 4);
+    if (p.g.visible) p.g.scale.y = on && v.killed ? Math.max(0.02, 1 - v.kt * 1.1) : Math.min(1, p.g.scale.y + dt * 4);
     flash[i] = Math.max(0, flash[i] - dt);
     if (on) {
       const ph = v.phase;
       p.l.set(ph === "ready" ? (flash[i] > 0 ? "accent" : "on") : ph === "crash" ? "bad" : ph === "starting" ? (Math.sin(clock * 12) > 0 ? "on" : "off") : "off");
       p.g.position.x = SLOTS[i].x + (ph === "crash" && v.t < 0.35 ? Math.sin(v.t * 60) * 0.8 : 0);
-      S.setLabel(p.id, "v" + v.ver + (ph === "crash" ? " ✗" : ph === "terminating" ? " …" : ""), { bad: ph === "crash", show: true });
+      S.setLabel(p.id, tagOf(v.ver) + (ph === "crash" ? " ✗" : ph === "terminating" ? " …" : ""), { bad: ph === "crash", show: true });
     } else S.setLabel(p.id, "", { show: false });
   });
   epLamps.forEach((l, i) => l.set(i < c.ready ? "on" : "off"));
@@ -209,7 +258,7 @@ S.onTick((dt) => {
   ceil.position.y = gy(gauge.ceil) + 0.8 + 1.2; floor.position.y = gy(gauge.floor) - 0.8;
   replicasBar.position.y = gy(state.R) + 0.25;
   const stalled = !done() && state.since > DEADLINE;
-  S.say(`v${state.tmpl} ${done() ? "rolled out" : stalled ? "stalled" : "rolling out"} · ${c.ready} ready · ${c.total} pods`);
+  S.say(`${tagOf(state.tmpl)} ${done() ? "rolled out" : stalled ? "stalled" : "rolling out"} · ${c.ready} ready · ${c.total} pods`);
   syncControls(c, stalled);
 });
 
@@ -218,7 +267,10 @@ const ui = { good: document.getElementById("dp-good"), bad: document.getElementB
 document.querySelectorAll("[data-do]").forEach((b) => b.addEventListener("click", () => {
   S.stopTour();
   const a = b.dataset.do;
-  if (a === "good") release(false); if (a === "bad") release(true); if (a === "undo") undo();
+  if (a === "good") { S.shellEcho?.(`kubectl set image deploy/web web=web:v${state.nextVer}`, "Release button"); release(false); }
+  if (a === "bad") { S.shellEcho?.(`kubectl set image deploy/web web=web:v${state.nextVer}`, "a broken build"); release(true); }
+  if (a === "undo") { S.shellEcho?.("kubectl rollout undo deploy/web", "Roll back button"); undo(); }
+  if (/^[su][-+]$/.test(a)) setTimeout(() => S.shellEcho?.(`kubectl patch deploy web -p '{"spec":{"strategy":{"rollingUpdate":{"maxSurge":${state.S},"maxUnavailable":${state.U}}}}}'`, "gauge buttons"));
   if (a === "s-") setBounds(state.S - 1, state.U); if (a === "s+") setBounds(state.S + 1, state.U);
   if (a === "u-") setBounds(state.S, state.U - 1); if (a === "u+") setBounds(state.S, state.U + 1);
   S.renderPanel();
@@ -226,28 +278,122 @@ document.querySelectorAll("[data-do]").forEach((b) => b.addEventListener("click"
 function syncControls(c, stalled) {
   const set = (el, t) => { if (el.textContent !== t) el.textContent = t; };
   set(ui.good, "Release v" + state.nextVer); set(ui.bad, "Release v" + state.nextVer + " (broken)");
-  set(ui.undo, state.history.length < 2 ? "Roll back" : "Roll back to v" + state.history[state.history.length - 2]);
+  set(ui.undo, state.history.length < 2 ? "Roll back" : "Roll back to " + tagOf(state.history[state.history.length - 2]));
   ui.undo.disabled = state.history.length < 2;
   set(ui.surge, "maxSurge " + state.S); set(ui.unavail, "maxUnavailable " + state.U);
-  const msg = stalled ? `Progressing=False: ProgressDeadlineExceeded. v${state.tmpl} pods never become Ready, so no more old pods can be removed. The old version keeps serving. Roll back.`
-    : done() ? `Rollout complete: ${state.R} of ${state.R} pods run v${state.tmpl}.`
-    : `Rolling out v${state.tmpl}: at most ${state.R + state.S} pods, at least ${state.R - state.U} ready.`;
+  const msg = stalled ? `Progressing=False: ProgressDeadlineExceeded. ${imageOf(state.tmpl)} pods never become Ready, so no more old pods can be removed. The old version keeps serving. Roll back.`
+    : done() ? `Rollout complete: ${state.R} of ${state.R} pods run ${imageOf(state.tmpl)}.`
+    : `Rolling out ${imageOf(state.tmpl)}: at most ${state.R + state.S} pods, at least ${state.R - state.U} ready.`;
   if (ui.status.textContent !== msg) { ui.status.textContent = msg; ui.status.dataset.tone = stalled ? "bad" : done() ? "good" : ""; }
 }
 
 // ---- what the inspector shows ----
 const ipOf = (i) => `10.244.${SLOTS[i].node + 1}.${10 + i}`;
-const rsName = (v) => "web-" + ["6b7f", "8c2d", "4a9e", "1f7b", "9d3c"][(v - 1) % 5];
-Object.assign(S.PARTS.control, { manifest: () => { const c = counts(); return K.deployment({ name: "web", replicas: state.R, image: "web:v" + state.tmpl, ready: c.ready, updated: c.fresh, available: c.ready, surge: state.S, unavailable: state.U, revision: state.history.length }); }, facts: () => { const c = counts(); return [["Template", "web:v" + state.tmpl], ["Pods", `${c.total} (max ${state.R + state.S})`], ["Ready", `${c.ready} (min ${state.R - state.U})`], ["Old pods left", c.old.length]]; }, kubectl: "kubectl rollout status deploy/web\nkubectl rollout history deploy/web\nkubectl rollout undo deploy/web\nkubectl get rs -l app=web" });
+Object.assign(S.PARTS.control, { manifest: () => { const c = counts(); return K.deployment({ name: "web", replicas: state.R, image: imageOf(state.tmpl), ready: c.ready, updated: c.fresh, available: c.ready, surge: state.S, unavailable: state.U, revision: state.revOf[state.tmpl] }); }, facts: () => { const c = counts(); return [["Template", imageOf(state.tmpl)], ["Pods", `${c.total} (max ${state.R + state.S})`], ["Ready", `${c.ready} (min ${state.R - state.U})`], ["Old pods left", c.old.length]]; }, kubectl: "kubectl rollout status deploy/web\nkubectl rollout history deploy/web\nkubectl rollout undo deploy/web\nkubectl get rs -l app=web" });
 Object.assign(S.PARTS.gauge, { manifest: () => `# the two numbers the gauge shows come from the Deployment's strategy:\nspec:\n  replicas: ${state.R}\n  strategy:\n    rollingUpdate:\n      maxSurge: ${state.S}         # ← ceiling: ${state.R} + ${state.S} = ${state.R + state.S} pods at most\n      maxUnavailable: ${state.U}   # ← floor: ${state.R} − ${state.U} = ${state.R - state.U} ready pods at least`, facts: () => { const c = counts(); return [["Total pods", `${c.total} / ceiling ${state.R + state.S}`], ["Ready pods", `${c.ready} / floor ${state.R - state.U}`]]; } });
-Object.assign(S.PARTS.registry, { manifest: () => K.replicaset({ name: rsName(state.tmpl), replicas: counts().fresh, ready: counts().freshReady, image: "web:v" + state.tmpl, hash: rsName(state.tmpl).slice(4) }), facts: () => [["New ReplicaSet", rsName(state.tmpl)], ["Image", "web:v" + state.tmpl]] });
-Object.assign(S.PARTS.bin, { manifest: () => { const old = [...new Set(counts().old.map((p) => p.ver))][0]; return old ? K.replicaset({ name: rsName(old), replicas: counts().old.length, ready: counts().old.filter((p) => p.phase === "ready").length, image: "web:v" + old, hash: rsName(old).slice(4) }) : `# old ReplicaSets are kept with replicas: 0, which is what makes rollback possible\n$ kubectl get rs -l app=web\n${state.history.map((v, k) => `${rsName(v)}   ${v === state.tmpl ? state.R : 0}   # v${v}`).join("\n")}`; } });
-Object.assign(S.PARTS.service, { manifest: () => K.service({ name: "web", endpoints: live().filter((p) => p.phase === "ready").map((p) => ipOf(p.i) + ":8080") }), facts: () => [["Endpoints", counts().ready], ["Versions serving", [...new Set(live().filter((p) => p.phase === "ready").map((p) => "v" + p.ver))].join(", ") || "none"]] });
+Object.assign(S.PARTS.registry, { manifest: () => K.replicaset({ name: rsName(state.tmpl), replicas: counts().fresh, ready: counts().freshReady, image: imageOf(state.tmpl), hash: rsName(state.tmpl).slice(4) }), facts: () => [["New ReplicaSet", rsName(state.tmpl)], ["Image", imageOf(state.tmpl)]] });
+Object.assign(S.PARTS.bin, { manifest: () => { const old = [...new Set(counts().old.map((p) => p.ver))][0]; return old ? K.replicaset({ name: rsName(old), replicas: counts().old.length, ready: counts().old.filter((p) => p.phase === "ready").length, image: imageOf(old), hash: rsName(old).slice(4) }) : `# old ReplicaSets are kept with replicas: 0, which is what makes rollback possible\n$ kubectl get rs -l app=web\n${state.history.map((v, k) => `${rsName(v)}   ${v === state.tmpl ? state.R : 0}   # ${tagOf(v)}`).join("\n")}`; } });
+Object.assign(S.PARTS.service, { manifest: () => K.service({ name: "web", endpoints: live().filter((p) => p.phase === "ready").map((p) => ipOf(p.i) + ":8080") }), facts: () => [["Endpoints", counts().ready], ["Versions serving", [...new Set(live().filter((p) => p.phase === "ready").map((p) => tagOf(p.ver)))].join(", ") || "none"]] });
 NODES.forEach((_, n) => Object.assign(S.PARTS["node-" + n], { manifest: () => K.node({ name: `node-${n + 1}`, cidr: `10.244.${n + 1}.0/24` }) }));
 pods.forEach((p, i) => Object.assign(S.PARTS[p.id], {
-  manifest: () => { const v = state.slot[i]; if (!isPod(v)) return ""; const ph = v.phase; return K.pod({ name: `web-${rsName(v.ver).slice(4)}-${"abcdefghjkmn"[i]}${v.id}`, labels: { app: "web", "pod-template-hash": rsName(v.ver).slice(4) }, image: "web:v" + v.ver, node: `node-${SLOTS[i].node + 1}`, ip: ipOf(i), ready: ph === "ready", restarts: v.restarts, owner: { kind: "ReplicaSet", name: rsName(v.ver) }, probes: true, phase: "Running", state: ph === "crash" ? `waiting: { reason: CrashLoopBackOff }` : ph === "starting" ? `running: {}   # ← started, readiness probe not passed yet` : ph === "terminating" ? `running: {}   # ← deletionTimestamp set: terminating` : undefined }); },
-  facts: () => { const v = state.slot[i]; return isPod(v) ? [["Version", "v" + v.ver], ["Phase", { ready: "Ready", starting: "Starting (not ready)", crash: "CrashLoopBackOff", terminating: "Terminating" }[v.phase]], ["Node", `node-${SLOTS[i].node + 1}`], ["Restarts", v.restarts]] : []; },
+  manifest: () => { const v = state.slot[i]; if (!isPod(v)) return ""; const ph = v.phase; return K.pod({ name: v.name, labels: { app: "web", "pod-template-hash": rsName(v.ver).slice(4) }, image: imageOf(v.ver), node: `node-${SLOTS[i].node + 1}`, ip: ipOf(i), ready: ph === "ready", restarts: v.restarts, owner: { kind: "ReplicaSet", name: rsName(v.ver) }, probes: true, phase: "Running", state: ph === "crash" ? `waiting: { reason: ${v.why === "pull" ? "ImagePullBackOff" : "CrashLoopBackOff"} }` : ph === "starting" ? `running: {}   # ← started, readiness probe not passed yet` : ph === "terminating" ? `running: {}   # ← deletionTimestamp set: terminating` : undefined }); },
+  facts: () => { const v = state.slot[i]; return isPod(v) ? [["Image", imageOf(v.ver)], ["Phase", { ready: "Ready", starting: "Starting (not ready)", crash: v.why === "pull" ? "ImagePullBackOff" : "CrashLoopBackOff", terminating: "Terminating" }[v.phase]], ["Node", `node-${SLOTS[i].node + 1}`], ["Restarts", v.restarts]] : []; },
 }));
+
+
+// ---- edit the YAML, or drive it all from the terminal ----
+const int = (lo, hi, what) => (v) => (!Number.isInteger(v) ? "must be a whole number" + (typeof v === "string" && v.endsWith("%") ? " in this lesson (percentages aren't modelled)" : "") : v < lo ? `must be greater than or equal to ${lo}` : v > hi ? `this yard ${what}` : "");
+const FIELDS = {
+  "spec.replicas": { check: int(1, 8, "has room for 1–8 replicas (12 pod slots, plus the surge)"), set: (v) => setReplicas(v) },
+  "spec.strategy.rollingUpdate.maxSurge": { check: (v, all) => int(0, 3, "allows maxSurge 0–3")(v) || (v === 0 && all["spec.strategy.rollingUpdate.maxUnavailable"] === 0 ? "may not be 0 when `maxUnavailable` is 0" : ""), set: (v) => { state.S = v; state.since = 0; } },
+  "spec.strategy.rollingUpdate.maxUnavailable": { check: int(0, 3, "allows maxUnavailable 0–3"), set: (v) => { state.U = v; state.since = 0; } },
+  "spec.template.spec.containers[0].image": { check: (v) => (typeof v !== "string" || !v.trim() ? "must be an image name like web:v2" : ""), set: (v) => setImage(String(v).trim(), `kubectl apply (image ${v})`) },
+  "spec.template.metadata.labels.app": { check: (v) => (v !== "web" ? "`selector` does not match template `labels`" : ""), set: () => {} },
+};
+Object.assign(S.PARTS.control, { fields: FIELDS, immutable: ["spec.selector"] });
+Object.assign(S.PARTS.gauge, { fields: FIELDS });
+
+const podStatus = (v) => v.res ? "ContainerCreating" : v.phase === "terminating" ? "Terminating" : v.phase === "crash" ? (v.why === "pull" ? (v.pulls > 1 ? "ImagePullBackOff" : "ErrImagePull") : "CrashLoopBackOff") : v.phase === "starting" && v.why === "pull" ? "ContainerCreating" : "Running";
+const rsList = () => [...new Set([...state.history, ...state.slot.filter(Boolean).map((v) => v.ver)])].map((id) => {
+  const mine = state.slot.filter((v) => v && v.ver === id && v.phase !== "terminating"), ready = mine.filter((v) => v.phase === "ready").length;
+  return { id, name: rsName(id), n: mine.length, ready };
+});
+const deployDescribe = () => {
+  const c = counts(), stalled = state.stalled, old = rsList().filter((r) => r.id !== state.tmpl && r.n);
+  return [["Selector:", "app=web"], ["Replicas:", `${state.R} desired | ${c.fresh} updated | ${c.total} total | ${c.ready} available | ${Math.max(0, state.R - c.ready)} unavailable`], ["StrategyType:", "RollingUpdate"], ["RollingUpdateStrategy:", `${state.U} max unavailable, ${state.S} max surge`],
+    ["Pod Template:"], ["  Labels:", "app=web"], ["  Containers:"], ["   web:"], ["    Image:", imageOf(state.tmpl)], ["    Port:", "8080/TCP"], ["    Readiness:", "http-get http://:8080/ready delay=0s timeout=1s period=10s"],
+    ["Conditions:"], ["  Type           Status  Reason"], ["  ----           ------  ------"], [`  Available      ${c.ready >= state.R - state.U ? "True    MinimumReplicasAvailable" : "False   MinimumReplicasUnavailable"}`], [`  Progressing    ${stalled ? "False   ProgressDeadlineExceeded" : done() ? "True    NewReplicaSetAvailable" : "True    ReplicaSetUpdated"}`],
+    ["OldReplicaSets:", old.map((r) => `${r.name} (${r.n}/${r.n} replicas created)`).join(", ") || "<none>"], ["NewReplicaSet:", `${rsName(state.tmpl)} (${c.fresh}/${state.R} replicas created)`]];
+};
+const podLogs = (v) => (v.res ? [`Error from server (BadRequest): container "web" in pod "${v.name}" is waiting to start: ContainerCreating`] : v.why === "pull" && v.phase !== "ready" ? [`Error from server (BadRequest): container "web" in pod "${v.name}" is waiting to start: trying and failing to pull image`] : v.log || []);
+S.kube({
+  editable: "deployment/web",
+  welcome: "# A simulated cluster: these commands change the model the scene draws. Try the examples, or type help.",
+  examples: ["kubectl get pods -o wide", "kubectl scale deploy/web --replicas=8", "kubectl set image deploy/web web=web:v2", "kubectl rollout status deploy/web", "kubectl get pods -w", "kubectl get rs", "kubectl rollout undo deploy/web", "kubectl edit deploy/web", "kubectl get events"],
+  objects: () => {
+    const c = counts(), list = [];
+    list.push({ kind: "Deployment", name: "web", part: "control", old: true, labels: { app: "web" }, row: { READY: `${c.ready}/${state.R}`, "UP-TO-DATE": c.fresh, AVAILABLE: c.ready }, wide: { CONTAINERS: "web", IMAGES: imageOf(state.tmpl), SELECTOR: "app=web" }, describe: deployDescribe });
+    rsList().forEach((r) => list.push({ kind: "ReplicaSet", name: r.name, old: r.id === 1, part: r.id === state.tmpl ? "registry" : "bin", labels: { app: "web", "pod-template-hash": r.name.slice(4) }, row: { DESIRED: r.n, CURRENT: r.n, READY: r.ready }, wide: { CONTAINERS: "web", IMAGES: imageOf(r.id), SELECTOR: `app=web,pod-template-hash=${r.name.slice(4)}` }, manifest: () => K.replicaset({ name: r.name, replicas: r.n, ready: r.ready, image: imageOf(r.id), hash: r.name.slice(4) }), describe: () => [["Controlled By:", "Deployment/web"], ["Replicas:", `${r.n} current / ${r.n} desired`], ["Pods Status:", `${r.ready} Running / ${r.n - r.ready} Waiting`], ["Image:", imageOf(r.id)]] }));
+    state.slot.forEach((v, i) => { if (!v) return; list.push({ kind: "Pod", name: v.name, part: v.res ? undefined : "pod-" + i, old: v.old, labels: { app: "web", "pod-template-hash": rsName(v.ver).slice(4) }, row: { READY: v.phase === "ready" ? "1/1" : "0/1", STATUS: podStatus(v), RESTARTS: v.restarts || 0 }, wide: { IP: v.res ? "<none>" : ipOf(i), NODE: `node-${SLOTS[i].node + 1}` }, logs: () => podLogs(v), describe: () => [["Node:", `node-${SLOTS[i].node + 1}/10.0.1.1${SLOTS[i].node}`], ["Status:", v.phase === "terminating" ? "Terminating" : v.res ? "Pending" : "Running"], ["IP:", v.res ? "" : ipOf(i)], ["Controlled By:", `ReplicaSet/${rsName(v.ver)}`], ["Containers:"], ["  web:"], ["    Image:", imageOf(v.ver)], ["    State:", { ready: "Running", starting: "Running", terminating: "Running", crash: "Waiting" }[v.phase] || "Waiting"], ...(v.phase === "crash" ? [["      Reason:", podStatus(v)]] : []), ["    Ready:", v.phase === "ready" ? "True" : "False"], ["    Restart Count:", v.restarts || 0]] }); });
+    list.push({ kind: "Service", name: "web", part: "service", old: true, labels: { app: "web" }, row: { TYPE: "ClusterIP", "CLUSTER-IP": "10.96.0.12", "EXTERNAL-IP": "<none>", "PORT(S)": "80/TCP" }, wide: { SELECTOR: "app=web" } });
+    const eps = live().filter((p) => p.phase === "ready").map((p) => ipOf(p.i) + ":8080");
+    list.push({ kind: "Endpoints", name: "web", part: "service", old: true, labels: { app: "web" }, row: { ENDPOINTS: eps.length ? eps.slice(0, 3).join(",") + (eps.length > 3 ? ` + ${eps.length - 3} more...` : "") : "<none>" } });
+    NODES.forEach((_, n) => list.push({ kind: "Node", name: "node-" + (n + 1), part: "node-" + n, old: true, labels: { "kubernetes.io/hostname": "node-" + (n + 1) }, row: { STATUS: "Ready", ROLES: "<none>", VERSION: "v1.31.2" }, wide: { "INTERNAL-IP": `10.0.1.1${n}` } }));
+    return list;
+  },
+  verbs: {
+    scale({ pos, f }) {
+      const t = pos.join("/").replace(/^(deployments?|deploy)(\.apps)?\//, "deploy/");
+      if (/^(rs|replicasets?)\//.test(t)) return { err: `replicaset.apps/${t.split("/")[1]} is owned by deployment/web, which would scale it straight back. Scale the Deployment: kubectl scale deploy/web --replicas=8` };
+      if (t !== "deploy/web") return { err: t ? `Error from server (NotFound): deployments.apps "${t.split("/").pop()}" not found` : "error: resource(s) were provided, but no name was specified" };
+      const n = +f["--replicas"];
+      if (f["--replicas"] === undefined) return { err: "error: required flag(s) \"replicas\" not set" };
+      const e = FIELDS["spec.replicas"].check(Number.isInteger(n) ? n : f["--replicas"]);
+      if (e) return { err: `The Deployment "web" is invalid: spec.replicas: Invalid value: ${f["--replicas"]}: ${e}` };
+      S.stopTour(); setReplicas(n);
+      return "deployment.apps/web scaled";
+    },
+    set({ pos }) {
+      if (pos[0] !== "image") return { err: `kubectl set ${pos[0] || ""} isn't part of this lesson; try kubectl set image deploy/web web=web:v2` };
+      const target = pos[1] === "deployment" || pos[1] === "deploy" ? "deploy/" + pos[2] : (pos[1] || "").replace(/^(deployments?|deployment\.apps)\//, "deploy/");
+      const pair = pos.slice(pos[1] === "deployment" || pos[1] === "deploy" ? 3 : 2).find((x) => x.includes("="));
+      if (target !== "deploy/web") return { err: `Error from server (NotFound): deployments.apps "${target.split("/").pop()}" not found` };
+      if (!pair) return { err: "error: at least one image update is required" };
+      const [ctr, image] = pair.split("=");
+      if (ctr !== "web" && ctr !== "*") return { err: `error: unable to find container named "${ctr}"` };
+      S.stopTour();
+      return setImage(image, `kubectl set image deploy/web web=${image}`) ? "deployment.apps/web image updated" : "deployment.apps/web image unchanged   # already the template's image";
+    },
+    rollout({ pos, f }) {
+      const [sub, a, b] = pos, target = (b ? a + "/" + b : a || "").replace(/^(deployments?|deployment\.apps)\//, "deploy/");
+      if (!sub) return { err: "error: specify a subcommand: status, history, undo, restart" };
+      if (target !== "deploy/web") return { err: target ? `Error from server (NotFound): deployments.apps "${target.split("/").pop()}" not found` : "error: required resource not specified" };
+      if (sub === "status") {
+        let last = "";
+        const line = () => { const c = counts(), R = state.R; if (done()) return `deployment "web" successfully rolled out`; if (state.stalled) return `error: deployment "web" exceeded its progress deadline`; if (c.fresh < R) return `Waiting for deployment "web" rollout to finish: ${Math.min(c.fresh, R)} out of ${R} new replicas have been updated...`; if (c.old.length) return `Waiting for deployment "web" rollout to finish: ${c.old.length} old replicas are pending termination...`; return `Waiting for deployment "web" rollout to finish: ${c.freshReady} of ${R} updated replicas are available...`; };
+        return { lines: [], every: 0.4, stream: () => { const l = line(); const fin = !l.startsWith("Waiting"); if (l === last) return { done: fin }; last = l; return { lines: [l], tone: l.startsWith("error") ? "err" : fin ? "good" : "", done: fin }; } };
+      }
+      if (sub === "history") return ["deployment.apps/web", ...[["REVISION", "CHANGE-CAUSE"], ...state.history.map((id) => [String(state.revOf[id]), (state.cause[id] || "<none>") + (id === state.tmpl ? "   # ← current" : "")])].map((r) => r[0].padEnd(10) + r[1])];
+      if (sub === "undo") { S.stopTour(); const rev = f["--to-revision"] ? +f["--to-revision"] : 0; if (rev && !state.history.some((id) => state.revOf[id] === rev)) return { err: `error: unable to find specified revision ${rev} in history` }; const to = undo(rev); return to ? "deployment.apps/web rolled back" : { err: "error: no rollout history found for deployment \"web\"" }; }
+      if (sub === "restart") { S.stopTour(); setImage(imageOf(state.tmpl), "kubectl rollout restart deploy/web", true); return "deployment.apps/web restarted"; }
+      if (sub === "pause" || sub === "resume") return { err: `rollout ${sub} isn't modelled in this lesson` };
+      return { err: `error: unknown command "${sub}" for "kubectl rollout"` };
+    },
+    delete({ pos, f }) {
+      let [what, ...names] = pos;
+      if (!what) return { err: 'error: You must provide one or more resources by argument or filename.' };
+      if (what.includes("/")) { names = pos.map((x) => x.split("/")[1]); what = pos[0].split("/")[0]; }
+      const k = KUBE.kindOf(what);
+      if (k === "Deployment" || k === "Service") return { err: `This lesson keeps ${k.toLowerCase()}/web so there is something to watch. On a real cluster this deletes it${k === "Deployment" ? ", its ReplicaSets and every pod" : " and the stable address in front of the pods"}.` };
+      if (k === "ReplicaSet") return { err: "Deleting a ReplicaSet makes the Deployment create it again at once. Delete a pod to watch self-healing instead." };
+      if (k !== "Pod") return { err: k ? `kubectl delete ${what} isn't part of this lesson` : `error: the server doesn't have a resource type "${what}"` };
+      const all = f["-l"] ? state.slot.filter((v) => v && !v.res && v.phase !== "terminating").map((v) => v.name) : names;
+      if (!all.length) return { err: "error: resource(s) were provided, but no name was specified" };
+      S.stopTour();
+      return { lines: all.map((n) => { const i = state.slot.findIndex((v) => v && v.name === n); const v = state.slot[i]; if (!v) return `Error from server (NotFound): pods "${n}" not found`; if (v.res) return `pod "${n}" is still being created; try again in a moment`; if (v.phase !== "terminating") { v.phase = "terminating"; v.killed = true; v.kt = 0; S.event("Normal", "Killing", "pod/" + n, "Stopping container web"); } return `pod "${n}" deleted`; }) };
+    },
+  },
+});
 
 S.setTour([
   { home: true, say: "Six pods run version 1 of the web app. A Deployment is about to replace them with version 2, without downtime.", hold: 5 },
@@ -257,7 +403,7 @@ S.setTour([
   { home: true, say: "Let the rollout finish.", hold: 3, until: () => done() && !job },
   { focus: "gauge", zoom: 3, say: "Now release v3, which is broken. Its pods crash and never become Ready...", run: () => release(true), hold: 10 },
   { home: true, say: "...so the rollout stalls at the floor: old v2 pods keep serving, and the Deployment reports ProgressDeadlineExceeded.", hold: 6, until: () => state.since > DEADLINE },
-  { focus: "control", zoom: 2.4, say: "Roll back. The same rules carry the Deployment back to v2.", run: undo, hold: 4, until: () => done() && !job },
+  { focus: "control", zoom: 2.4, say: "Roll back. The same rules carry the Deployment back to v2.", run: () => undo(), hold: 4, until: () => done() && !job },
   { home: true, say: "kubectl rollout undo did the same thing you just watched.", hold: 6 },
 ]);
 S.start();

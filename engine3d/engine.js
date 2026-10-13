@@ -256,7 +256,7 @@ export function createStage({ home = { target: [0, 30, 0], dir: [1, 0.95, 1.05],
   }
   const titleOf = (id) => { const p = S.PARTS[id]; return typeof p.title === "function" ? p.title() : p.title; };
   S.select = (id, fly = false) => {
-    tab = "yaml";
+    tab = "yaml"; editing = null; applyMsg = null;
     if (selected) { paint(selected, null); labelEls[selected]?.el.classList.remove("is-sel"); }
     selected = id && S.PARTS[id] ? id : null;
     if (selected) { paint(selected, M.edgeSel); labelEls[selected]?.el.classList.add("is-sel"); if (fly) S.focus(selected); }
@@ -314,9 +314,30 @@ export function createStage({ home = { target: [0, 30, 0], dir: [1, 0.95, 1.05],
     return [`kubectl get ${k} ${o.name}${nsf} -o yaml`, `kubectl describe ${k} ${o.name}${nsf}`, o.kind === "Pod" ? `kubectl logs ${o.name}${nsf}` : "", `kubectl get events${nsf} --field-selector involvedObject.name=${o.name}`].filter(Boolean).join("\n");
   }
   let tab = "yaml", lastHtml = "", lastSel = null;
+  // the YAML editor: a part with `fields` can be edited and applied like kubectl edit
+  let editing = null, editText = "", applyMsg = null;
+  S.editPart = (id) => {
+    if (selected !== id) S.select(id, true);
+    const p = S.PARTS[id];
+    tab = "yaml"; editing = id; editText = val(p.manifest) || ""; applyMsg = null; lastHtml = "";
+    S.renderPanel(true);
+    const ta = panel.querySelector("textarea.code");
+    if (ta) { ta.focus({ preventScroll: true }); const at = ta.value.indexOf("spec:"); if (at >= 0) ta.setSelectionRange(at, at); }
+  };
+  function applyEdit() {
+    const ta = panel.querySelector("textarea.code");
+    if (!ta) return;
+    editText = ta.value;
+    const r = S.applyYaml(editText, editing);
+    S.shellEcho?.(`kubectl edit ${(objectOf(editText).kind || "").toLowerCase()}/${objectOf(editText).name || ""}`, "from the panel");
+    if (r.err) { applyMsg = { text: r.err, tone: "bad" }; S.printTerm?.(r.err, "err"); lastHtml = ""; S.renderPanel(true); return; }
+    S.printTerm?.(r.ok);
+    applyMsg = { text: r.ok, tone: "good" }; editing = null; lastHtml = ""; S.renderPanel(true);
+  }
   const wide = document.getElementById("yamlwide");
-  S.renderPanel = () => {
+  S.renderPanel = (force) => {
     const p = selected && S.PARTS[selected];
+    if (editing && !force && panel.querySelector("textarea.code")) return; // never rebuild under someone typing
     const pre = panel.querySelector("pre.code");
     const scroll = pre ? [pre.scrollTop, pre.scrollLeft] : [0, 0];
     let html;
@@ -334,8 +355,9 @@ export function createStage({ home = { target: [0, 30, 0], dir: [1, 0.95, 1.05],
       html = `<span class="kind">${esc(p.kind)}</span><h2>${esc(titleOf(p.id))}</h2>${desc ? `<p>${desc}</p>` : ""}
         ${facts.length ? `<dl class="facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("")}</dl>` : ""}
         <div class="actions">${acts.map((a, i) => `<button type="button" data-act="${i}"${a.danger ? ' class="danger"' : ""}>${esc(a.label)}</button>`).join("")}<button type="button" data-back>← Overview</button></div>
-        ${yaml || cmds ? `<div class="tabs" role="tablist">${yaml ? `<button type="button" role="tab" data-tab="yaml" aria-selected="${tab === "yaml"}">${manifest ? "YAML" : "Example"}</button>` : ""}${cmds ? `<button type="button" role="tab" data-tab="kubectl" aria-selected="${tab === "kubectl"}">kubectl</button>` : ""}<span class="tabs-gap"></span><button type="button" data-copy aria-label="Copy">Copy</button><button type="button" data-expand aria-label="Show wide">Expand</button></div>
-        <pre class="code">${S.highlight(body)}</pre>` : ""}`;
+        ${yaml || cmds ? `<div class="tabs" role="tablist">${yaml ? `<button type="button" role="tab" data-tab="yaml" aria-selected="${tab === "yaml"}">${manifest ? "YAML" : "Example"}</button>` : ""}${cmds ? `<button type="button" role="tab" data-tab="kubectl" aria-selected="${tab === "kubectl"}">kubectl</button>` : ""}<span class="tabs-gap"></span>${p.fields && manifest && tab === "yaml" && editing !== p.id ? `<button type="button" data-edit class="edit">Edit</button>` : ""}<button type="button" data-copy aria-label="Copy">Copy</button><button type="button" data-expand aria-label="Show wide">Expand</button></div>
+        ${applyMsg ? `<pre class="applymsg" data-tone="${applyMsg.tone}">${esc(applyMsg.text)}</pre>` : ""}
+        ${editing === p.id ? `<div class="editor"><textarea class="code" spellcheck="false" autocapitalize="off" aria-label="Edit YAML" rows="${Math.min(24, editText.split("\n").length + 1)}">${esc(editText)}</textarea><div class="edit-actions"><button type="button" data-apply class="primary">Apply</button><button type="button" data-revert>Reset</button><button type="button" data-cancel>Cancel</button><span class="muted">⌘/Ctrl+Enter applies · Esc cancels</span></div></div>` : `<pre class="code">${S.highlight(body)}</pre>`}` : ""}`;
       if (wide && !wide.hidden) { wide.querySelector("[data-wide-title]").textContent = `${p.kind} · ${titleOf(p.id)}`; wide.querySelector("pre").innerHTML = S.highlight(body); }
       S._panelText = body;
     }
@@ -346,7 +368,19 @@ export function createStage({ home = { target: [0, 30, 0], dir: [1, 0.95, 1.05],
     if (npre) { npre.scrollTop = scroll[0]; npre.scrollLeft = scroll[1]; }
     panel.querySelectorAll("[data-pick]").forEach((b) => b.addEventListener("click", () => S.select(b.dataset.pick, true)));
     panel.querySelectorAll("[data-back]").forEach((b) => b.addEventListener("click", () => { S.select(null); S.home(); }));
-    panel.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { tab = b.dataset.tab; lastHtml = ""; S.renderPanel(); }));
+    panel.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { tab = b.dataset.tab; if (tab !== "yaml") editing = null; lastHtml = ""; S.renderPanel(true); }));
+    panel.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () => { S.stopTour?.(); S.editPart(selected); }));
+    panel.querySelectorAll("[data-apply]").forEach((b) => b.addEventListener("click", applyEdit));
+    panel.querySelectorAll("[data-cancel]").forEach((b) => b.addEventListener("click", () => { editing = null; applyMsg = null; lastHtml = ""; S.renderPanel(true); }));
+    panel.querySelectorAll("[data-revert]").forEach((b) => b.addEventListener("click", () => { editText = val(S.PARTS[editing].manifest) || ""; applyMsg = null; lastHtml = ""; S.renderPanel(true); }));
+    const ta = panel.querySelector("textarea.code");
+    if (ta) ta.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); applyEdit(); }
+      else if (e.key === "Escape") { editing = null; applyMsg = null; lastHtml = ""; S.renderPanel(true); }
+      else if (e.key === "Tab" && !e.shiftKey) { e.preventDefault(); ta.setRangeText("  ", ta.selectionStart, ta.selectionEnd, "end"); }
+      e.stopPropagation();
+    });
+    if (ta) ta.addEventListener("input", () => { editText = ta.value; });
     panel.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", () => {
       const done = () => { b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy"), 1200); };
       navigator.clipboard?.writeText(S._panelText).then(done, () => { const r = document.createRange(); r.selectNodeContents(panel.querySelector("pre.code")); getSelection().removeAllRanges(); getSelection().addRange(r); });
@@ -511,6 +545,7 @@ export function createStage({ home = { target: [0, 30, 0], dir: [1, 0.95, 1.05],
     requestAnimationFrame(loop);
   }
   S.start = () => { applyTheme(); S.renderPanel(); if (S.tourSteps.length) renderBar(); start(); };
+  KUBE.install(S);
   return S;
 }
 

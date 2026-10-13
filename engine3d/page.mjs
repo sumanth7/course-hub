@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-const engine = () => readFileSync(join(HERE, "engine.js"), "utf8").replace(/^export /gm, "") + "\n" + readFileSync(join(HERE, "manifests.js"), "utf8");
+const engine = () => ["engine.js", "yaml.js", "manifests.js", "kubectl.js"].map((f) => readFileSync(join(HERE, f), "utf8").replace(/^export /gm, "")).join("\n");
 
 export const CSS = `
 :root {
@@ -88,6 +88,37 @@ pre.code { max-height: 46vh; overflow: auto; font-size: 12px; line-height: 1.6; 
 pre { margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; font: 400 12.5px/1.55 var(--mono); white-space: pre; overflow-x: auto; background: var(--bg); }
 pre b { font-weight: 500; }
 pre mark { background: none; color: var(--good); }
+.tabs .edit { color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 5px 11px; margin-bottom: 4px; }
+.editor { display: grid; gap: 8px; }
+textarea.code { width: 100%; min-height: 220px; max-height: 52vh; resize: vertical; margin: 0; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 8px; font: 400 12px/1.6 var(--mono); color: var(--ink); background: var(--bg); white-space: pre; overflow: auto; tab-size: 2; }
+textarea.code:focus { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+.edit-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.edit-actions button { font: 500 12.5px/1 var(--mono); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 999px; padding: 9px 12px; cursor: pointer; }
+.edit-actions .primary { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+.edit-actions .muted { font: 400 11.5px/1.3 var(--mono); color: var(--muted); }
+pre.applymsg { white-space: pre-wrap; font-size: 12px; border-color: currentColor; }
+pre.applymsg[data-tone="good"] { color: var(--good); }
+pre.applymsg[data-tone="bad"] { color: var(--bad); }
+.leftcol { display: grid; gap: 14px; min-width: 0; align-content: start; }
+@media (max-width: 920px) { .leftcol { display: contents; } .leftcol .term { order: 3; } }
+.term { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden; }
+.term header { display: flex; justify-content: space-between; gap: 10px; padding: 9px 14px; border-bottom: 1px solid var(--line); font: 500 11.5px/1.2 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.term .term-note { text-transform: none; letter-spacing: 0; }
+.term-out { height: 260px; overflow: auto; padding: 10px 14px 4px; font: 400 12.5px/1.55 var(--mono); background: var(--bg); }
+.term-out .tl { white-space: pre; min-height: 1.55em; }
+.term-out .cmd { color: var(--ink); font-weight: 500; margin-top: 6px; }
+.term-out .echo { color: var(--accent); font-weight: 400; }
+.term-out .err { color: var(--bad); white-space: pre-wrap; }
+.term-out .dim { color: var(--muted); white-space: pre-wrap; }
+.term-out .good { color: var(--good); }
+.term-in { margin: 0; border-top: 1px solid var(--line); background: var(--bg); }
+.term-in label { display: flex; align-items: center; gap: 8px; padding: 10px 14px; font: 500 13px/1 var(--mono); }
+.term-ps { color: var(--accent); }
+.term-in input { flex: 1; min-width: 0; border: 0; background: none; color: var(--ink); font: 400 13px/1.4 var(--mono); outline: none; }
+.term-ex { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px; border-top: 1px solid var(--line); }
+.term-ex button { font: 400 11.5px/1 var(--mono); color: var(--muted); background: none; border: 1px dashed var(--line); border-radius: 999px; padding: 6px 9px; cursor: pointer; }
+.term-ex button:hover { color: var(--ink); border-color: var(--ink); }
+@media (max-width: 600px) { .term-out { height: 220px; font-size: 11.5px; } .term header .term-note { display: none; } }
 .stats { font: 400 12px/1.6 var(--mono); color: var(--muted); margin: 0; }
 .below { display: grid; gap: 12px; margin-top: 14px; }
 .ctl { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }

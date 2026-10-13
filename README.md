@@ -34,3 +34,10 @@ The engine lives in `engine3d/` (`engine.js` for the browser, `page.mjs` for the
 ## Deploy
 Pushing to `main` runs `.github/workflows/pages.yml`, which builds the site and publishes it to GitHub Pages.
 Learner progress is stored in each visitor's browser (localStorage); there is no backend.
+
+### Editable YAML and the simulated terminal
+
+- `engine3d/yaml.js` parses YAML and reports errors the way the API server does.
+- `engine3d/kubectl.js` is a simulated kubectl. A lesson calls `S.kube({ objects, verbs, examples })`, and get, describe, logs, edit, apply and events then work against the lesson's own model.
+- A part becomes editable once it has `fields: { "spec.replicas": { check, set } }`. Changes to fields the lesson doesn't model are accepted and listed as ignored.
+- Lesson 05 (Deployments) is the reference: scale, set image, rollout status/history/undo/restart, and delete pod.
