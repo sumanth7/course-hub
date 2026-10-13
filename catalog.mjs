@@ -41,7 +41,7 @@ export const TRACKS = [
       { slug: "probes", title: "Health probes", status: "live", minutes: 8,
         goal: "Tell liveness, readiness and startup probes apart and see why a new pod waits before getting traffic.",
         concepts: ["Liveness probes", "Readiness probes", "Startup probes", "Self-healing"] },
-      { slug: "resources", title: "Requests, limits & QoS", status: "planned",
+      { slug: "resources", title: "Requests, limits & QoS", status: "live", minutes: 10,
         goal: "Predict where a pod is scheduled, when it is throttled or OOM-killed, and which pods are evicted first.",
         concepts: ["Resource requests", "Resource limits", "QoS classes & eviction"] },
       { slug: "storage", title: "Volumes, PVs & PVCs", status: "planned",
