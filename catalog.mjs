@@ -29,7 +29,7 @@ export const TRACKS = [
       { slug: "deployments", title: "Deployments & rollouts", status: "live", minutes: 10,
         goal: "Predict what maxSurge and maxUnavailable do during a rolling update, and roll back a bad release.",
         concepts: ["ReplicaSets", "Deployments", "Rolling updates", "Rollbacks"] },
-      { slug: "services", title: "Pod networking & Services", status: "planned",
+      { slug: "services", title: "Pod networking & Services", status: "live", minutes: 10,
         goal: "Explain how pods reach each other, why Services exist, and how a name like my-svc resolves.",
         concepts: ["Pod networking", "Services", "Service types", "Endpoints & kube-proxy", "Cluster DNS"] },
       { slug: "ingress", title: "Ingress & NetworkPolicy", status: "planned",
