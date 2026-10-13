@@ -85,6 +85,9 @@ a { color: inherit; }
 .jump { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .jump a { display: inline-block; text-decoration: none; font: 500 13px/1 var(--mono); padding: 9px 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink); }
 .jump a:hover { border-color: var(--ink); }
+.proto { margin: 0; font: 400 14px/1.5 var(--mono); color: var(--muted); }
+.proto a { color: var(--accent); text-decoration: none; font-weight: 500; margin-right: 8px; }
+.proto a:hover { text-decoration: underline; }
 
 .track { padding-block: 48px 8px; scroll-margin-top: 16px; }
 .track-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 8px 24px; margin-bottom: 20px; }
@@ -128,6 +131,7 @@ footer { margin-top: 56px; padding-block: 24px 40px; border-top: 1px solid var(-
     <p>${esc(site.tagline)}</p>
     <div class="progress"><span class="bar" aria-hidden="true"><span id="bar"></span></span><span id="overall" aria-live="polite">0 of ${total} live lessons complete</span></div>
     <ul class="jump">${tracks.map((t) => `<li><a href="#${t.id}">${esc(t.title)}</a></li>`).join("")}</ul>
+    <p class="proto"><a href="prototypes/cluster-3d/">New: try the cluster in 3D →</a> <span>a prototype you can rotate, zoom and take apart</span></p>
   </header>
   ${sections}
   <footer>Progress is saved in this browser only. Each lesson has a dark and a light version; the hub opens the one that matches your theme.</footer>

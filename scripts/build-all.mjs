@@ -40,6 +40,19 @@ if (existsSync(thumbsDir)) {
     thumbs.add(name.replace(/\.png$/, ""));
   }
 }
+// prototypes are plain static pages: copy each folder as it is
+const PROTO = join(ROOT, "prototypes");
+if (existsSync(PROTO)) for (const name of readdirSync(PROTO)) {
+  const src = join(PROTO, name);
+  mkdirSync(join(OUT, "prototypes", name), { recursive: true });
+  for (const f of readdirSync(src)) {
+    if (f === "index.html") {
+      // inline module scripts so the page also works when opened from disk
+      const html = readFileSync(join(src, f), "utf8").replace(/<script type="module" src="([^"]+)"><\/script>/g, (_, file) => `<script type="module">${readFileSync(join(src, file), "utf8").replace(/<\/script/gi, "<\\/script")}</script>`);
+      writeFileSync(join(OUT, "prototypes", name, f), html);
+    } else copyFileSync(join(src, f), join(OUT, "prototypes", name, f));
+  }
+}
 writeFileSync(join(OUT, "index.html"), hubHtml({ site: SITE, tracks: TRACKS, thumbs }));
 writeFileSync(join(OUT, ".nojekyll"), "");
 console.log(`built ${built} lessons and the hub into site/`);
