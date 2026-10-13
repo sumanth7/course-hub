@@ -120,6 +120,17 @@ function syncUi(staleN) {
   if (ui.rows.__h !== html) { ui.rows.innerHTML = html; ui.rows.__h = html; }
 }
 
+// ---- what the inspector shows ----
+Object.assign(S.PARTS.configmap, { manifest: () => K.configmap({ name: "app", data: { LOG_LEVEL: api.LOG_LEVEL, FEATURE_X: api.FEATURE_X } }), facts: () => [["LOG_LEVEL", api.LOG_LEVEL], ["FEATURE_X", api.FEATURE_X]], kubectl: "kubectl get configmap app -o yaml\nkubectl edit configmap app" });
+Object.assign(S.PARTS.secret, { manifest: () => K.secret({ name: "db", data: { password: api.DB_PASSWORD }, decoded }), facts: () => [["Type", "Opaque"], ["password", decoded ? "hunter2" : "aHVudGVyMg== (base64)"]], kubectl: "kubectl get secret db -o yaml\nkubectl get secret db -o jsonpath='{.data.password}' | base64 -d" });
+Object.assign(S.PARTS.cabinet, { manifest: () => K.etcd({ rev: 1200, keys: ["/registry/configmaps/default/app", "/registry/secrets/default/db", "/registry/pods/default/app"] }) });
+const podY = () => K.pod({ name: "app", labels: { app: "app" }, node: "node-1", ip: "10.244.1.30", restarts: 0, env: ["{ name: LOG_LEVEL, valueFrom: { configMapKeyRef: { name: app, key: LOG_LEVEL } } }   # ← copied once, at start", "{ name: FEATURE_X, valueFrom: { configMapKeyRef: { name: app, key: FEATURE_X } } }", "{ name: DB_PASSWORD, valueFrom: { secretKeyRef: { name: db, key: password } } }   # ← decoded into the env"], volumes: [{ name: "config", path: "/etc/config", src: "configMap: { name: app }   # ← one file per key, refreshed by the kubelet" }] });
+Object.assign(S.PARTS.pod, { manifest: podY, facts: () => [["Env LOG_LEVEL", env.LOG_LEVEL + (env.LOG_LEVEL !== api.LOG_LEVEL ? " (stale)" : "")], ["File log_level", files.LOG_LEVEL]] });
+Object.assign(S.PARTS.env, { manifest: () => `# inside the container: $ env | grep -E 'LOG|FEATURE|DB'\nLOG_LEVEL=${env.LOG_LEVEL}${env.LOG_LEVEL !== api.LOG_LEVEL ? "   # ← stale: the ConfigMap now says " + api.LOG_LEVEL : ""}\nFEATURE_X=${env.FEATURE_X}${env.FEATURE_X !== api.FEATURE_X ? "   # ← stale: the ConfigMap now says " + api.FEATURE_X : ""}\nDB_PASSWORD=${env.DB_PASSWORD}   # ← the Secret, decoded`, kubectl: "kubectl exec app -- env" });
+Object.assign(S.PARTS.files, { manifest: () => `# inside the container: $ ls /etc/config && cat /etc/config/*\n/etc/config/LOG_LEVEL → ${files.LOG_LEVEL}\n/etc/config/FEATURE_X → ${files.FEATURE_X}\n# these are symlinks the kubelet swaps atomically on each sync${isFinite(syncIn) ? `\n# ← sync pending: about ${Math.ceil(syncIn)} s` : ""}`, kubectl: "kubectl exec app -- cat /etc/config/LOG_LEVEL" });
+Object.assign(S.PARTS.kubelet, { manifest: K.kubeletConfig() });
+Object.assign(S.PARTS.node, { manifest: () => K.node({ name: "node-1" }) });
+
 S.setTour([
   { home: true, say: "Two API objects on the left, and a pod with its lid off on the right, so we can see where their values end up.", hold: 6 },
   { focus: "configmap", zoom: 3, say: "Edit the ConfigMap: LOG_LEVEL becomes debug. The API has the new value immediately.", run: () => { if (api.LOG_LEVEL === "info") edit("LOG_LEVEL"); }, hold: 5 },

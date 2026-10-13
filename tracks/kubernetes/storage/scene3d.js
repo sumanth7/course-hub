@@ -157,6 +157,15 @@ function syncUi() {
   if (ui.rows.__h !== html) { ui.rows.innerHTML = html; ui.rows.__h = html; }
 }
 
+// ---- what the inspector shows ----
+Object.assign(S.PARTS.press, { manifest: () => K.storageclass({ reclaim: policy }), facts: () => [["Provisioner", "ebs.csi.aws.com"], ["reclaimPolicy", policy]] });
+Object.assign(S.PARTS.pvc, { manifest: () => (pvc.exists ? K.pvc({ name: "data", volume: boundPv() ? pvName(boundPv().id) : "", phase: boundPv() && boundPv().state === "Bound" ? "Bound" : "Pending" }) : "# deleted\n$ kubectl delete pvc data\npersistentvolumeclaim \"data\" deleted"), facts: () => [["Status", pvc.exists ? (boundPv() ? "Bound to " + pvName(boundPv().id) : "Pending") : "deleted"], ["Request", "5Gi, ReadWriteOnce"]] });
+lockers.forEach((L, i) => Object.assign(S.PARTS[L.id], { manifest: () => { const v = pvAt(i); return v ? K.pv({ name: pvName(v.id), claim: v.state === "Bound" ? "data" : v.state === "Released" ? "data" : "", reclaim: policy, phase: v.state === "Deleting" ? "Released" : v.state === "Provisioning" ? "Pending" : v.state }) : ""; }, facts: () => { const v = pvAt(i); return v ? [["Status", v.state], ["Records", v.data], ["Capacity", "5Gi"]] : []; } }));
+Object.assign(S.PARTS.pod, { manifest: () => K.pod({ name: podName, labels: { app: "app" }, node: "node-1", ip: "10.244.1.60", restarts: 0, owner: { kind: "ReplicaSet", name: "app-7c9d" }, volumes: [{ name: "scratch", path: "/scratch", src: "emptyDir: {}   # ← lives as long as the pod" }, { name: "data", path: "/data", src: "persistentVolumeClaim: { claimName: data }   # ← outlives the pod" }] }), facts: () => [["Container fs", data.fs + " records"], ["emptyDir", data.empty + " records"], ["PV", (boundPv() ? boundPv().data : 0) + " records"]] });
+Object.assign(S.PARTS.fs, { manifest: () => `# inside the container: the writable layer on top of the image\n$ ls /var/app/records | wc -l\n${data.fs}   # ← gone on container restart` });
+Object.assign(S.PARTS.empty, { manifest: () => `volumes:\n- name: scratch\n  emptyDir: {}   # ← created with the pod, deleted with the pod\n# $ ls /scratch | wc -l  →  ${data.empty}` });
+Object.assign(S.PARTS.rack, { manifest: () => pvs.length ? pvs.map((v) => K.pv({ name: pvName(v.id), claim: v.state === "Bound" ? "data" : "", reclaim: policy, phase: v.state })).join("\n---\n") : "# no PersistentVolumes", kubectl: "kubectl get pv" });
+
 S.setTour([
   { home: true, say: "A pod on a node, a rack of storage lockers, and a StorageClass press that builds new ones.", hold: 5 },
   { focus: "pod", zoom: 2, say: "The app writes three records, each into three places: its container's filesystem, an emptyDir, and a PersistentVolume.", run: () => { write(); setTimeout(write, 600); setTimeout(write, 1200); }, hold: 6 },

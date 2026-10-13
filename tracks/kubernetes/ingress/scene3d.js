@@ -95,6 +95,12 @@ function syncUi() {
   if (ui.log.textContent !== l) ui.log.textContent = l;
 }
 
+// ---- what the inspector shows ----
+Object.assign(S.PARTS.ingress, { manifest: () => K.ingress({ name: "shop", ns: "shop", tls: { hosts: ["shop.example.com", "admin.example.com"], secret: "shop-cert" }, rules: [{ host: "shop.example.com", paths: [{ path: "/", svc: "web" }, { path: "/api", svc: "api" }] }, { host: "admin.example.com", paths: [{ path: "/", svc: "admin" }] }] }), facts: () => [["Controller", "ingress-nginx"], ["TLS", "shop-cert"], ["Unknown hosts", "404 from the default backend"]] });
+const npY = () => mode === "off" ? "# no NetworkPolicy objects in namespace shop\n$ kubectl get networkpolicy -n shop\nNo resources found in shop namespace." : K.networkpolicy({ name: "default-deny", podSelector: {}, from: null }) + (mode === "allow" ? "\n---\n" + K.networkpolicy({ name: "allow-from-ingress", podSelector: { tier: "front" }, from: ["namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } }"] }) + "\n---\n" + K.networkpolicy({ name: "api-from-web", podSelector: { app: "api" }, from: ["podSelector: { matchLabels: { app: web } }"] }) + "\n---\n" + K.networkpolicy({ name: "db-from-api", podSelector: { app: "db" }, from: ["podSelector: { matchLabels: { app: api } }   # ← web → db is not listed, so it is dropped"] }) : "");
+Object.assign(S.PARTS.policy, { manifest: npY, facts: () => [["Mode", { off: "no policies", deny: "default deny", allow: "deny + allow rules" }[mode]]], kubectl: "kubectl get networkpolicy -n shop\nkubectl describe networkpolicy db-from-api -n shop" });
+PODS.forEach((p, i) => Object.assign(S.PARTS["pod-" + i], { manifest: () => K.pod({ name: p.id, ns: "shop", labels: { app: p.svc, ...(p.svc !== "db" ? { tier: "front" } : {}) }, node: "node-1", ip: `10.244.1.${70 + i}` }), facts: () => [["Labels", `app=${p.svc}`], ["Accepts from", mode === "off" ? "anyone" : [...ALLOW].filter((e) => e.endsWith(">" + p.svc)).map((e) => e.split(">")[0]).join(", ") || "nobody"]] }));
+
 S.setTour([
   { home: true, say: "Five pods. Outside requests come in on the right; pods call each other along the back.", run: () => (mode = "off"), hold: 5 },
   { focus: "ingress", zoom: 2.4, say: "The Ingress controller ends TLS (the ring comes off) and routes by host and path. An unknown host gets a 404.", hold: 7 },

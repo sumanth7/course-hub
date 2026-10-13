@@ -127,6 +127,14 @@ function syncUi() {
   set(ui.log, log.join("\n\n"));
 }
 
+// ---- what the inspector shows ----
+const RULESY = { "pod-reader": [{ groups: [""], res: ["pods"], verbs: ["get", "list", "watch"] }], deployer: [{ groups: ["apps"], res: ["deployments"], verbs: ["get", "list", "create", "update", "delete"] }, { groups: [""], res: ["pods"], verbs: ["get", "list"] }], "cluster-viewer": [{ groups: [""], res: ["nodes", "pods"], verbs: ["get", "list"] }] };
+const subjOf = (id) => ({ kind: id === "alice" ? "User" : "ServiceAccount", name: id });
+ROLES.forEach((r, i) => Object.assign(S.PARTS["role-" + i], { manifest: () => { const cl = r.kind === "ClusterRole"; const subs = SUBJ.filter((s) => bindings[s.id].has(r.id)).map((s) => subjOf(s.id)); return K.role({ name: r.id, rules: RULESY[r.id], cluster: cl }) + "\n---\n" + K.rolebinding({ name: r.id + "-binding", role: r.id, subjects: subs, cluster: cl }); }, facts: () => [["Bound to", SUBJ.filter((s) => bindings[s.id].has(r.id)).map((s) => s.id).join(", ") || "nobody"]], kubectl: `kubectl describe ${r.kind === "ClusterRole" ? "clusterrole" : "role -n dev"} ${r.id}\nkubectl create ${r.kind === "ClusterRole" ? "clusterrolebinding" : "rolebinding -n dev"} x --${r.kind === "ClusterRole" ? "clusterrole" : "role"}=${r.id} --serviceaccount=dev:ci-bot` }));
+SUBJ.forEach((s) => Object.assign(S.PARTS["subj-" + s.id], { manifest: () => (s.id === "alice" ? `# users are not API objects: they come from certificates or an identity provider\n# alice's kubeconfig, excerpt:\nusers:\n- name: alice\n  user: { client-certificate: alice.crt, client-key: alice.key }   # ← CN=alice` : K.serviceaccount({ name: s.id }) + "\n---\n" + K.pod({ name: s.id + "-6d9f", ns: "dev", labels: { app: s.id }, node: "node-1", ip: "10.244.1.8" + (s.id === "monitor" ? 1 : 0), sa: s.id })), facts: () => [["Kind", s.what], ["Roles", [...bindings[s.id]].join(", ") || "none"]], kubectl: `kubectl auth can-i --list -n dev --as=${s.id === "alice" ? "alice" : "system:serviceaccount:dev:" + s.id}` }));
+Object.assign(S.PARTS.gate, { manifest: () => K.apiserver() + "\n---\n" + K.namespace({ name: "dev", podSecurity: pss ? "restricted" : undefined }), facts: () => [["Pod Security on dev", pss ? "restricted (enforced)" : "not enforced"]] });
+RES.forEach((r) => Object.assign(S.PARTS["res-" + r.id], { kubectl: `kubectl get ${r.id} -n dev\nkubectl auth can-i get ${r.id} -n dev --as=alice` }));
+
 S.setTour([
   { home: true, say: "Three subjects send requests to the API server's gate. Behind it: the resources. At the back: who may do what.", hold: 6 },
   { focus: "role-1", zoom: 2.4, say: "alice's badge hangs on the deployer role: she may manage Deployments in dev, and read pods.", run: () => (who = "alice"), hold: 6 },

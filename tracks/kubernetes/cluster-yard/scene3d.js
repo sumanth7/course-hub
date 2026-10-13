@@ -252,6 +252,24 @@ function syncControls() {
 }
 
 // ---- guided tour ----
+// ---- what the inspector shows: each object's YAML, live ----
+const ipOf = (i) => `10.244.${SLOTS[i].node + 1}.${10 + i}`;
+const podIdx = () => state.slot.map((v, i) => (v > 0 ? i : -1)).filter((i) => i >= 0);
+const podsOn = (n) => podIdx().filter((i) => SLOTS[i].node === n).length;
+Object.assign(S.PARTS.cluster, { manifest: () => K.namespace({ name: "default" }), kubectl: "kubectl get nodes\nkubectl get pods -A -o wide\nkubectl cluster-info", facts: () => [["Nodes", `${state.up.filter(Boolean).length} of 3 Ready`], ["Pods", `${running()} running, ${Math.max(0, state.desired - running())} pending`], ["Kubernetes", "v1.31"]] });
+NODES.forEach((_, n) => Object.assign(S.PARTS["node-" + n], { manifest: () => K.node({ name: `node-${n + 1}`, cidr: `10.244.${n + 1}.0/24`, ready: state.up[n], allocated: `${podsOn(n)} of 4 pods` }), facts: () => [["Status", state.up[n] ? "Ready" : "NotReady (down)"], ["Pods", `${podsOn(n)} / 4`], ["Pod CIDR", `10.244.${n + 1}.0/24`]] }));
+Object.assign(S.PARTS.control, { manifest: () => K.deployment({ name: "web", replicas: state.desired, ready: endpoints().length, updated: running(), available: endpoints().length }), facts: () => [["Desired", state.desired], ["Running", running()], ["Ready", endpoints().length], ["Pending", Math.max(0, state.desired - running())]] });
+Object.assign(S.PARTS.service, { manifest: () => K.service({ name: "web", endpoints: endpoints().map((i) => ipOf(i) + ":8080") }), facts: () => [["ClusterIP", "10.96.0.20"], ["Endpoints", endpoints().length], ["DNS name", "web.default.svc.cluster.local"]] });
+Object.assign(S.PARTS.ingress, { manifest: () => K.ingress({ name: "web", rules: [{ host: "shop.example.com", paths: [{ path: "/", svc: "web" }] }], tls: { hosts: ["shop.example.com"], secret: "shop-cert" } }), facts: () => [["Class", "nginx"], ["Host", "shop.example.com"], ["Backend", "svc/web:80"]] });
+Object.assign(S.PARTS.network, { manifest: () => K.endpointslice({ service: "web", endpoints: podIdx().map((i) => ({ ip: ipOf(i), ready: state.ready[i] > 1, node: `node-${SLOTS[i].node + 1}`, pod: state.names[i] })) }) });
+Object.assign(S.PARTS.crane, { manifest: K.schedulerConfig(), kubectl: "kubectl get pods -o wide   # NODE column\nkubectl get events --field-selector reason=Scheduled", facts: () => [["Pods waiting", Math.max(0, state.desired - running())], ["Policy", "least-loaded node that is up"]] });
+Object.assign(S.PARTS.registry, { manifest: "# images live in a registry; the pod template names one:\nspec:\n  template:\n    spec:\n      containers:\n      - name: web\n        image: ghcr.io/acme/web:1.4.2   # ← registry/repository:tag\n        imagePullPolicy: IfNotPresent   # ← pull only if the node lacks it", kubectl: "kubectl get pods -o jsonpath='{..image}'\ncrictl images   # on a node" });
+Object.assign(S.PARTS.bin, { manifest: "# scaling down: the ReplicaSet deletes its newest pods first\n$ kubectl scale deployment web --replicas=3\ndeployment.apps/web scaled\n$ kubectl get pods\nNAME      READY   STATUS        RESTARTS\nweb-x7bq  1/1     Terminating   0   # ← gets SIGTERM, 30s grace period" });
+pods.forEach((p, i) => Object.assign(S.PARTS[p.id], {
+  manifest: () => (state.slot[i] > 0 ? K.pod({ name: state.names[i], labels: { app: "web", "pod-template-hash": "6b7f" }, node: `node-${SLOTS[i].node + 1}`, ip: ipOf(i), ready: state.ready[i] > 1, owner: { kind: "ReplicaSet", name: "web-6b7f" } }) : ""),
+  facts: () => (state.slot[i] > 0 ? [["Node", `node-${SLOTS[i].node + 1}`], ["Pod IP", ipOf(i)], ["Ready", state.ready[i] > 1 ? "yes" : "starting"], ["Owner", "ReplicaSet web-6b7f"]] : []),
+}));
+
 S.setTour([
   { home: true, say: "This yard is a Kubernetes cluster. Watch the crane: it keeps the number of running pods equal to what you asked for.", hold: 6, run: () => setDesired(6) },
   { focus: "control", zoom: 2.4, say: "The control plane stores the desired state: 6 replicas of the web app. The knob is that number.", hold: 6 },

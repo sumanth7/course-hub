@@ -115,6 +115,16 @@ function syncUi() {
   ui.rollback.disabled = fault === "none";
 }
 
+// ---- what the inspector shows ----
+const v_ = () => vals();
+const podState = () => ({ none: undefined, image: "waiting: { reason: ImagePullBackOff, message: \"Back-off pulling image \\\"shop:" + v_().tag + "\\\"\" }", crash: "waiting: { reason: CrashLoopBackOff }   # ← lastState.terminated: { exitCode: 1 }", pending: undefined, selector: undefined })[fault];
+pods.forEach((p, i) => Object.assign(S.PARTS["pod-" + i], { manifest: () => K.pod({ name: NAMES[i], labels: { app: "shop" }, image: "shop:" + v_().tag, node: fault === "pending" ? "" : "node-1", ip: fault === "pending" ? "" : `10.244.1.${21 + i}`, phase: fault === "pending" ? "Pending" : "Running", ready: status() === "Running", restarts, reason: fault === "pending" ? "Unschedulable" : undefined, state: podState(), env: [`{ name: DATABASE_URL, value: ${v_().db ? '"' + v_().db + '"' : '""   # ← empty: the app exits at start'} }`], resources: { reqCpu: "250m", reqMem: v_().mem, limCpu: "500m", limMem: v_().mem }, owner: { kind: "ReplicaSet", name: "shop-6c8d" } }), facts: () => [["Status", status()], ["Image", "shop:" + v_().tag], ["Restarts", restarts]] }));
+Object.assign(S.PARTS.svc, { manifest: () => K.service({ name: "shop", selector: { app: v_().sel }, endpoints: endpoints() }) + (fault === "selector" ? "\n# ← selects app=" + v_().sel + ", but the pods are labelled app=shop" : ""), facts: () => [["Selector", "app=" + v_().sel], ["Endpoints", endpoints().length || "none"]] });
+Object.assign(S.PARTS.values, { manifest: () => `# values.yaml for release shop, revision ${history.length}\nimage:\n  repository: shop\n  tag: ${v_().tag}${v_().tag !== GOOD.tag ? "   # ← no such image" : ""}\nenv:\n  DATABASE_URL: ${v_().db || '""'}${!v_().db ? "   # ← the app needs this" : ""}\nresources:\n  memory: ${v_().mem}${v_().mem !== GOOD.mem ? "   # ← more than any node has" : ""}\nservice:\n  selector: { app: ${v_().sel} }${v_().sel !== GOOD.sel ? "   # ← typo: pods are app=shop" : ""}`, kubectl: "helm get values shop\nhelm get values shop --revision 1\nhelm diff upgrade shop ./shop   # plugin" });
+Object.assign(S.PARTS.kit, { manifest: () => `# helm history shop\nREVISION  STATUS      DESCRIPTION\n${history.map((h, k) => `${String(k + 1).padEnd(10)}${(k === history.length - 1 ? "deployed" : "superseded").padEnd(12)}${k === 0 ? "Install complete" : faultOf(h.values) === "none" ? "Rollback / upgrade complete" : "Upgrade complete"}`).join("\n")}\n---\n# Chart.yaml\napiVersion: v2\nname: shop\nversion: 1.2.0\nappVersion: "1.4.2"`, kubectl: "helm history shop\nhelm get manifest shop   # the rendered YAML Helm applied" });
+Object.assign(S.PARTS.printer, { manifest: () => "# kubectl get events --sort-by=.lastTimestamp\n" + events().join("\n") });
+Object.assign(S.PARTS.node, { manifest: () => K.node({ name: "node-1", cpu: "4", mem: "8Gi" }) });
+
 S.setTour([
   { home: true, say: "A Helm chart and its values installed release shop: three pods and a Service. Everything is healthy.", hold: 5 },
   { focus: "values", zoom: 2.6, say: "helm upgrade with a typo in the image tag. The sheet marks the bad value...", run: BREAK.image, hold: 5 },

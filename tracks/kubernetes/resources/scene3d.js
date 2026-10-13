@@ -146,6 +146,16 @@ function syncUi() {
   if (ui.rows.__h !== html) { ui.rows.innerHTML = html; ui.rows.__h = html; }
 }
 
+// ---- what the inspector shows ----
+const q = (v, u) => (v ? (u === "Gi" ? v + "Gi" : v < 1 ? v * 1000 + "m" : String(v)) : "");
+podObjs.forEach((o, i) => Object.assign(S.PARTS[o.id], {
+  manifest: () => { const p = pods[i]; if (!p) return ""; return K.pod({ name: p.name, labels: { app: p.name }, node: p.slot >= 0 ? "node-1" : "", ip: p.slot >= 0 ? `10.244.1.${40 + i}` : "", ready: p.state === "running", restarts: p.restarts, phase: p.state === "pending" ? "Pending" : p.state === "evicted" ? "Failed" : "Running", qos: p.qos, reason: p.state === "pending" ? "Unschedulable" : p.state === "evicted" ? "Evicted" : undefined, resources: p.qos === "BestEffort" ? undefined : { reqCpu: q(p.req.cpu), reqMem: q(p.req.mem, "Gi"), limCpu: q(p.lim.cpu), limMem: q(p.lim.mem, "Gi") }, state: p.state === "oom" ? "terminated: { reason: OOMKilled, exitCode: 137 }   # ← over its memory limit" : undefined }) + (p.qos === "BestEffort" ? "\n# no resources: block at all → QoS BestEffort, first to be evicted" : ""); },
+  facts: () => { const p = pods[i]; return p ? [["QoS", p.qos], ["CPU use", `${p.use.cpu.toFixed(2)}${p.lim.cpu ? " / limit " + p.lim.cpu : ""}`], ["Memory use", `${p.use.mem.toFixed(1)} GiB${p.lim.mem ? " / limit " + p.lim.mem + " GiB" : ""}`], ["State", p.state], ["Restarts", p.restarts]] : []; },
+  kubectl: () => { const p = pods[i]; return p ? `kubectl top pod ${p.name}\nkubectl describe pod ${p.name}   # Requests/Limits, QoS Class, Last State: OOMKilled` : ""; },
+}));
+Object.assign(S.PARTS.node, { manifest: () => K.node({ name: "node-1", cpu: "4", mem: "8Gi", allocated: `cpu ${requested("cpu").toFixed(1)} (${Math.round(requested("cpu") * 25)}%), memory ${requested("mem")}Gi (${Math.round(requested("mem") * 12.5)}%)` }), facts: () => [["Requested CPU", `${requested("cpu").toFixed(1)} / 4`], ["Requested memory", `${requested("mem")} / 8 GiB`], ["Used memory", `${used("mem").toFixed(1)} GiB`]] });
+Object.assign(S.PARTS.kubelet, { manifest: K.kubeletConfig(), facts: () => [["Memory pressure", press > 0 ? "yes: evicting" : "no"], ["Eviction order", "BestEffort → Burstable over request → Guaranteed"]], kubectl: "kubectl top node node-1\nkubectl describe node node-1   # Conditions: MemoryPressure" });
+
 S.setTour([
   { home: true, say: "One node with 4 CPU and 8 GiB to give, three pods running. Each pod carries a CPU meter and a memory meter.", hold: 6 },
   { focus: "pod-0", zoom: 3, say: "On a meter, the blue tick is the request (what the scheduler reserves), the bright cap the limit, the fill current use.", hold: 7 },

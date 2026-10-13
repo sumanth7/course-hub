@@ -174,6 +174,22 @@ function sync(eps) {
   if (ui.status.textContent !== msg) ui.status.textContent = msg;
 }
 
+// ---- what the inspector shows ----
+const svcY = () => K.service({ name: "backend", type: svc.type, nodePort: svc.type !== "ClusterIP" ? 30080 : undefined, lbIP: svc.type === "LoadBalancer" ? "203.0.113.7" : undefined, endpoints: endpoints().map((b) => b.ip + ":8080") });
+Object.assign(S.PARTS.ledger, { manifest: svcY, facts: () => [["Type", svc.type], ["ClusterIP", "10.96.0.20"], ["DNS", "backend.default.svc.cluster.local"], ["Endpoints", endpoints().map((b) => b.ip).join(", ") || "none"]], kubectl: "kubectl get svc backend -o yaml\nkubectl get endpointslices -l kubernetes.io/service-name=backend -o yaml\nkubectl run tmp --rm -it --image=busybox -- nslookup backend" });
+Object.assign(S.PARTS.cluster, { manifest: () => K.endpointslice({ service: "backend", endpoints: backends.filter((b) => !b.gone).map((b) => ({ ip: b.ip, ready: b.ready, node: NODES[b.node].name, pod: "backend-" + b.id })) }) });
+Object.assign(S.PARTS.lb, { manifest: svcY });
+NODES.forEach((N, n) => {
+  Object.assign(S.PARTS["node-" + n], { manifest: () => K.node({ name: N.name, cidr: N.cidr + ".0/24" }), facts: () => [["Pod CIDR", N.cidr + ".0/24"], ["NodePort", svc.type === "ClusterIP" ? "closed" : "30080 open"]] });
+  Object.assign(S.PARTS["proxy-" + n], { manifest: () => `# kube-proxy runs as a DaemonSet; in iptables mode it writes NAT rules like these on ${N.name}:\n-A KUBE-SERVICES -d 10.96.0.20/32 -p tcp --dport 80 -j KUBE-SVC-BACKEND   # ← traffic for the ClusterIP\n` + endpoints().map((b, k, a) => `-A KUBE-SVC-BACKEND -m statistic --mode random --probability ${(1 / (a.length - k)).toFixed(3)} -j KUBE-SEP-${k}   # ← pick one at random\n-A KUBE-SEP-${k} -p tcp -j DNAT --to-destination ${b.ip}:8080   # ← rewrite to a pod IP`).join("\n") + (svc.type !== "ClusterIP" ? "\n-A KUBE-NODEPORTS -p tcp --dport 30080 -j KUBE-SVC-BACKEND   # ← NodePort" : ""), kubectl: "kubectl -n kube-system get ds kube-proxy\nkubectl -n kube-system logs ds/kube-proxy" });
+});
+Object.assign(S.PARTS.frontend, { manifest: () => K.pod({ name: "frontend", labels: { app: "frontend" }, node: "node-a", ip: "10.244.1.4", env: ['{ name: BACKEND_URL, value: "http://backend" }   # ← a Service name, never a pod IP'] }) });
+Object.assign(S.PARTS.coredns, { manifest: () => K.configmap({ name: "coredns", ns: "kube-system", data: { Corefile: ".:53 { kubernetes cluster.local … ; forward . /etc/resolv.conf }" } }) + "\n# answers: backend.default.svc.cluster.local → 10.96.0.20", kubectl: "kubectl -n kube-system get svc kube-dns\nkubectl -n kube-system get cm coredns -o yaml" });
+BACK_SLOTS.forEach(([n], i) => Object.assign(S.PARTS["b-" + i], {
+  manifest: () => { const b = backends.find((x) => x.slot === i && !x.gone); return b ? K.pod({ name: "backend-" + b.id, labels: { app: "backend" }, node: NODES[n].name, ip: b.ip, ready: b.ready, owner: { kind: "ReplicaSet", name: "backend-7c4d" } }) : ""; },
+  facts: () => { const b = backends.find((x) => x.slot === i && !x.gone); return b ? [["Pod IP", b.ip], ["Node", NODES[n].name], ["In endpoints", b.ready ? "yes" : "not yet"]] : []; },
+}));
+
 S.setTour([
   { home: true, say: "Two nodes, each giving its pods IPs from its own range. The frontend pod wants to call the backend.", hold: 5 },
   { focus: "frontend", zoom: 3, say: "It doesn't know any pod IPs. It asks cluster DNS for 'backend' (the ringed dots)...", hold: 6 },

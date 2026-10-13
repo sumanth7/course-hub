@@ -159,6 +159,19 @@ function syncUi() {
   set(ui.scale, "db replicas " + stsState.replicas);
 }
 
+// ---- what the inspector shows ----
+[0, 1, 2].forEach((n) => {
+  Object.assign(S.PARTS["db-" + n], { manifest: () => { const m = stsState.members[n]; return m ? K.pod({ name: "db-" + n, labels: { app: "db", "statefulset.kubernetes.io/pod-name": "db-" + n }, image: "postgres:16", node: "node-" + (n + 1), ip: `10.244.${n + 1}.30`, ready: m.state === "ready", owner: { kind: "StatefulSet", name: "db" }, volumes: [{ name: "data", path: "/var/lib/postgresql", src: `persistentVolumeClaim: { claimName: data-db-${n} }   # ← its own claim, always this one` }] }) : K.statefulset({ replicas: stsState.replicas, ready: stsState.members.filter((x) => x && x.state === "ready").length }); }, facts: () => { const m = stsState.members[n]; return [["Name", "db-" + n + " (stable)"], ["State", m ? m.state : "not running"], ["Claim", `data-db-${n}`], ["DNS", `db-${n}.db.default.svc.cluster.local`]]; } });
+  Object.assign(S.PARTS["lock-" + n], { manifest: () => K.pvc({ name: "data-db-" + n, size: "1Gi", volume: `pvc-${["3a1f", "9c2e", "7b4d"][n]}` }) + `\n# made from the StatefulSet's volumeClaimTemplates; kept when db-${n} goes away` });
+});
+NODE_X.forEach((_, n) => {
+  Object.assign(S.PARTS["ds-" + n], { manifest: () => (ds.pods[n] ? K.pod({ name: "log-agent-" + ["x2kd", "p9fw", "m4tq", "r7cv"][n], ns: "kube-system", labels: { app: "log-agent" }, image: "fluent-bit:3", node: "node-" + (n + 1), ip: `10.244.${n + 1}.40`, owner: { kind: "DaemonSet", name: "log-agent" } }) : K.daemonset({ desired: ds.nodes })) });
+  Object.assign(S.PARTS["node-" + n], { manifest: () => K.node({ name: "node-" + (n + 1), cidr: `10.244.${n + 1}.0/24`, ready: n < ds.nodes }) });
+});
+[0, 1, 2].forEach((n) => Object.assign(S.PARTS["job-" + n], { manifest: () => { const r = job.running.find((x) => x.node === n), f = job.finished.filter((x) => x.node === n).slice(-1)[0]; return K.pod({ name: `${jobName || "report-1"}-${["k7x2p", "m3q9z", "t8w4c"][n]}`, labels: { "job-name": jobName || "report-1" }, image: "report:2.1", node: "node-" + (n + 1), ip: `10.244.${n + 1}.50`, owner: { kind: "Job", name: jobName || "report-1" }, ready: !!r, phase: r ? "Running" : f ? (f.ok ? "Succeeded" : "Failed") : "Pending", reason: f && !r ? (f.ok ? "Completed" : "Error") : undefined }); } }));
+Object.assign(S.PARTS.cron, { manifest: () => K.cronjob({ on: cron.on }) + (jobName ? "\n---\n" + K.job({ name: jobName, succeeded: job.done, active: job.running.length, failed: job.failedOnce ? 1 : 0 }) : ""), facts: () => [["Schedule", cron.on ? "on" : "suspended"], ["Last Job", jobName || "none yet"], ["Progress", `${job.done}/4 succeeded`]] });
+Object.assign(S.PARTS.plate, { manifest: () => K.statefulset({ replicas: stsState.replicas, ready: stsState.members.filter((x) => x && x.state === "ready").length }) + "\n---\n" + K.daemonset({ desired: ds.nodes, ready: ds.pods.filter(Boolean).length }) });
+
 S.setTour([
   { home: true, say: "Three nodes, three bays each, three kinds of workload. Watch the StatefulSet start up first.", hold: 5 },
   { focus: "db-0", zoom: 2.4, say: "A StatefulSet creates db-0, then db-1, then db-2, each only after the one before is Ready. Each gets its own volume claim.", hold: 6 },

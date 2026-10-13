@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-const engine = () => readFileSync(join(HERE, "engine.js"), "utf8").replace(/^export /gm, "");
+const engine = () => readFileSync(join(HERE, "engine.js"), "utf8").replace(/^export /gm, "") + "\n" + readFileSync(join(HERE, "manifests.js"), "utf8");
 
 export const CSS = `
 :root {
@@ -32,7 +32,7 @@ a { color: inherit; }
 .top button[aria-pressed="true"] { color: var(--good); border-color: var(--good); }
 h1 { margin: 2px 0 6px; font-size: clamp(26px, 4vw, 42px); line-height: 1.05; letter-spacing: -.02em; text-wrap: balance; }
 .lede { margin: 0 0 16px; color: var(--muted); max-width: 72ch; font-size: 16px; }
-.stage { display: grid; grid-template-columns: minmax(0, 1fr) 350px; gap: 14px; align-items: start; }
+.stage { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 14px; align-items: start; }
 @media (max-width: 920px) { .stage { grid-template-columns: minmax(0, 1fr); } }
 .viewer { position: relative; height: min(70vh, 660px); min-height: 380px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--scene-bg); }
 .viewer canvas { display: block; touch-action: none; outline: none; }
@@ -67,6 +67,24 @@ h1 { margin: 2px 0 6px; font-size: clamp(26px, 4vw, 42px); line-height: 1.05; le
 .actions .danger, .ctl .danger { color: var(--bad); border-color: currentColor; }
 .ctl button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
 .ctl button:disabled { opacity: .4; cursor: default; }
+.facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; font: 400 13px/1.45 var(--mono); }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+.tabs { display: flex; align-items: center; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: -6px; }
+.tabs button { font: 500 12px/1 var(--mono); color: var(--muted); background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 10px; cursor: pointer; }
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.tabs [data-copy], .tabs [data-expand] { border: 1px solid var(--line); border-radius: 999px; padding: 5px 9px; margin-bottom: 4px; }
+.tabs-gap { flex: 1; }
+pre.code { max-height: 46vh; overflow: auto; font-size: 12px; line-height: 1.6; }
+.yk { color: var(--accent); }
+.ys { color: var(--good); }
+.yc { color: var(--muted); }
+.yn { color: var(--muted); font-style: italic; }
+.yamlwide { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 12px 14px; display: grid; gap: 8px; }
+.yamlwide[hidden] { display: none; }
+.yamlwide header { display: flex; justify-content: space-between; align-items: center; font: 500 12px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.yamlwide header button { font: inherit; color: var(--ink); background: none; border: 1px solid var(--line); border-radius: 999px; padding: 7px 11px; cursor: pointer; }
+.yamlwide pre { max-height: none; font-size: 13px; line-height: 1.65; }
 pre { margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; font: 400 12.5px/1.55 var(--mono); white-space: pre; overflow-x: auto; background: var(--bg); }
 pre b { font-weight: 500; }
 pre mark { background: none; color: var(--good); }
@@ -122,7 +140,7 @@ export function page3d({ title, pageTitle, lede, trackTitle, lessonNo, id, twoD,
     </div>
     <aside class="panel" id="panel" aria-live="polite"></aside>
   </div>
-  <div class="below">${controls}</div>
+  <div class="below"><section class="yamlwide" id="yamlwide" hidden aria-label="Object YAML"><header><span data-wide-title></span><button type="button" id="yamlwide-close">Close</button></header><pre class="code"></pre></section>${controls}</div>
   ${caption ? `<p class="caption">${caption}</p>` : ""}
   ${next ? `<div class="next"><a href="${next.href}">Next: ${esc(next.title)} →</a></div>` : ""}
 </div>

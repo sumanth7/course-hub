@@ -22,6 +22,7 @@ export function createStage({ home = { target: [0, 30, 0], dir: [1, 0.95, 1.05],
   const readout = document.getElementById("readout");
   const hint = document.getElementById("hint");
   const S = { viewer, panel, PARTS: {}, ticks: [], themeHooks: [], tourSteps: [] };
+  window.__S = S; // for tests: inspect every part's manifest
 
   // ---------- renderer ----------
   let renderer;
@@ -255,6 +256,7 @@ export function createStage({ home = { target: [0, 30, 0], dir: [1, 0.95, 1.05],
   }
   const titleOf = (id) => { const p = S.PARTS[id]; return typeof p.title === "function" ? p.title() : p.title; };
   S.select = (id, fly = false) => {
+    tab = "yaml";
     if (selected) { paint(selected, null); labelEls[selected]?.el.classList.remove("is-sel"); }
     selected = id && S.PARTS[id] ? id : null;
     if (selected) { paint(selected, M.edgeSel); labelEls[selected]?.el.classList.add("is-sel"); if (fly) S.focus(selected); }
@@ -287,28 +289,74 @@ export function createStage({ home = { target: [0, 30, 0], dir: [1, 0.95, 1.05],
   }
 
   // ---------- inspector panel ----------
+  // A part may describe itself with: kind, title, desc, facts (rows of [label, value]), actions,
+  // manifest (the object's YAML as kubectl shows it), kubectl (commands), or a short yaml example.
   S.overview = () => "";
+  const esc = (x) => String(x).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+  const val = (v) => (typeof v === "function" ? v() : v);
+  // a small YAML highlighter: comments, keys, quoted strings, and the "# ←" notes
+  S.highlight = (text) => String(text).split("\n").map((line) => {
+    // split off a trailing comment (a # outside quotes), then colour keys and quoted strings in one pass
+    let inQ = false, cut = -1;
+    for (let i = 0; i < line.length; i++) { const c = line[i]; if (c === '"') inQ = !inQ; else if (c === "#" && !inQ && (i === 0 || /\s/.test(line[i - 1]))) { cut = i; break; } }
+    const code = cut >= 0 ? line.slice(0, cut) : line, note = cut >= 0 ? line.slice(cut) : "";
+    const out = code.replace(/("[^"]*")|(^\s*(?:-\s+)?|[{,]\s*)([\w./-]+)(?=:(\s|$))|([^"{,]+)/g, (m, str, pre, key, _sp, rest) =>
+      str ? `<span class="ys">${esc(str)}</span>` : key ? `${esc(pre)}<span class="yk">${esc(key)}</span>` : esc(m));
+    return out + (note ? `<span class="${note.includes("←") ? "yn" : "yc"}">${esc(note)}</span>` : "");
+  }).join("\n");
+  const objectOf = (yaml) => { const kind = (yaml.match(/^kind:\s*(\S+)/m) || [])[1]; const name = (yaml.match(/^\s{2}name:\s*(\S+)/m) || [])[1]; const ns = (yaml.match(/^\s{2}namespace:\s*(\S+)/m) || [])[1]; return { kind, name, ns }; };
+  function kubectlFor(p, yaml) {
+    const own = val(p.kubectl);
+    if (own) return own;
+    const o = objectOf(yaml || "");
+    if (!o.kind || yaml.startsWith("#")) return "";
+    const k = o.kind.toLowerCase(), nsf = o.ns && o.ns !== "default" ? ` -n ${o.ns}` : "";
+    return [`kubectl get ${k} ${o.name}${nsf} -o yaml`, `kubectl describe ${k} ${o.name}${nsf}`, o.kind === "Pod" ? `kubectl logs ${o.name}${nsf}` : "", `kubectl get events${nsf} --field-selector involvedObject.name=${o.name}`].filter(Boolean).join("\n");
+  }
+  let tab = "yaml", lastHtml = "", lastSel = null;
+  const wide = document.getElementById("yamlwide");
   S.renderPanel = () => {
     const p = selected && S.PARTS[selected];
-    const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+    const pre = panel.querySelector("pre.code");
+    const scroll = pre ? [pre.scrollTop, pre.scrollLeft] : [0, 0];
+    let html;
     if (!p) {
       const ids = Object.values(S.PARTS).filter((q) => q.listed !== false && !q.dynamic);
-      panel.innerHTML = `<span class="kind">Overview</span>${S.overview()}
-        <div class="parts">${ids.map((q) => `<button type="button" data-pick="${q.id}">${esc(titleOf(q.id))}</button>`).join("")}</div>
-        <p class="stats" id="stats"></p>`;
+      html = `<span class="kind">Overview</span>${S.overview()}<div class="parts">${ids.map((q) => `<button type="button" data-pick="${q.id}">${esc(titleOf(q.id))}</button>`).join("")}</div><p class="stats" id="stats"></p>`;
+      if (wide) wide.hidden = true;
     } else {
-      const desc = typeof p.desc === "function" ? p.desc() : p.desc;
-      const yaml = typeof p.yaml === "function" ? p.yaml() : p.yaml;
-      const acts = (typeof p.actions === "function" ? p.actions() : p.actions) || [];
-      panel.innerHTML = `<span class="kind">${esc(p.kind)}</span><h2>${esc(titleOf(p.id))}</h2><p>${desc}</p>
+      const desc = val(p.desc), facts = val(p.facts) || [], acts = val(p.actions) || [];
+      const manifest = val(p.manifest), example = val(p.yaml);
+      const yaml = manifest || example || "";
+      const cmds = kubectlFor(p, manifest);
+      if (tab === "kubectl" && !cmds) tab = "yaml";
+      const body = tab === "kubectl" ? cmds : yaml;
+      html = `<span class="kind">${esc(p.kind)}</span><h2>${esc(titleOf(p.id))}</h2>${desc ? `<p>${desc}</p>` : ""}
+        ${facts.length ? `<dl class="facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("")}</dl>` : ""}
         <div class="actions">${acts.map((a, i) => `<button type="button" data-act="${i}"${a.danger ? ' class="danger"' : ""}>${esc(a.label)}</button>`).join("")}<button type="button" data-back>← Overview</button></div>
-        ${yaml ? `<pre>${esc(yaml)}</pre>` : ""}`;
-      panel.querySelectorAll("[data-act]").forEach((b) => b.addEventListener("click", () => { acts[+b.dataset.act].run(); S.renderPanel(); }));
+        ${yaml || cmds ? `<div class="tabs" role="tablist">${yaml ? `<button type="button" role="tab" data-tab="yaml" aria-selected="${tab === "yaml"}">${manifest ? "YAML" : "Example"}</button>` : ""}${cmds ? `<button type="button" role="tab" data-tab="kubectl" aria-selected="${tab === "kubectl"}">kubectl</button>` : ""}<span class="tabs-gap"></span><button type="button" data-copy aria-label="Copy">Copy</button><button type="button" data-expand aria-label="Show wide">Expand</button></div>
+        <pre class="code">${S.highlight(body)}</pre>` : ""}`;
+      if (wide && !wide.hidden) { wide.querySelector("[data-wide-title]").textContent = `${p.kind} · ${titleOf(p.id)}`; wide.querySelector("pre").innerHTML = S.highlight(body); }
+      S._panelText = body;
     }
+    if (html === lastHtml && selected === lastSel) return;
+    lastHtml = html; lastSel = selected;
+    panel.innerHTML = html;
+    const npre = panel.querySelector("pre.code");
+    if (npre) { npre.scrollTop = scroll[0]; npre.scrollLeft = scroll[1]; }
     panel.querySelectorAll("[data-pick]").forEach((b) => b.addEventListener("click", () => S.select(b.dataset.pick, true)));
     panel.querySelectorAll("[data-back]").forEach((b) => b.addEventListener("click", () => { S.select(null); S.home(); }));
+    panel.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => { tab = b.dataset.tab; lastHtml = ""; S.renderPanel(); }));
+    panel.querySelectorAll("[data-copy]").forEach((b) => b.addEventListener("click", () => {
+      const done = () => { b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy"), 1200); };
+      navigator.clipboard?.writeText(S._panelText).then(done, () => { const r = document.createRange(); r.selectNodeContents(panel.querySelector("pre.code")); getSelection().removeAllRanges(); getSelection().addRange(r); });
+    }));
+    panel.querySelectorAll("[data-expand]").forEach((b) => b.addEventListener("click", () => { if (!wide) return; wide.hidden = false; lastHtml = ""; S.renderPanel(); wide.scrollIntoView({ behavior: reduced() ? "auto" : "smooth", block: "nearest" }); }));
+    const acts = (p && val(p.actions)) || [];
+    panel.querySelectorAll("[data-act]").forEach((b) => b.addEventListener("click", () => { acts[+b.dataset.act].run(); lastHtml = ""; S.renderPanel(); }));
     S.afterPanel?.(panel);
   };
+  document.getElementById("yamlwide-close")?.addEventListener("click", () => { wide.hidden = true; });
 
   // ---------- camera ----------
   let tween = null;
@@ -455,7 +503,7 @@ export function createStage({ home = { target: [0, 30, 0], dir: [1, 0.95, 1.05],
     fitFrame();
     // keep a selected part's live text current, unless the reader is using the panel's buttons
     panelT += dt;
-    if (panelT > 0.8) { panelT = 0; const p = selected && S.PARTS[selected]; if (p && (typeof p.desc === "function" || typeof p.title === "function") && !panel.contains(document.activeElement)) S.renderPanel(); }
+    if (panelT > 0.8) { panelT = 0; const p = selected && S.PARTS[selected]; if (p && !panel.contains(document.activeElement)) S.renderPanel(); }
     renderer.render(scene, camera);
     labels.render(scene, camera);
     const st = document.getElementById("stats");

@@ -119,6 +119,21 @@ function syncUi() {
   if (ui.status.textContent !== desc) { ui.status.textContent = desc; ui.status.dataset.tone = demo.kind === "crash" ? "bad" : ""; }
 }
 
+// ---- what the inspector shows ----
+PODS.forEach((p, i) => Object.assign(S.PARTS["pod-" + i], {
+  manifest: () => K.pod({ name: p.name, ns: p.ns, labels: p.labels, image: `${p.labels.app}:2.0`, node: "node-" + (p.node + 1), ip: `10.244.${p.node + 1}.${12 + i}` }),
+  facts: () => [["Namespace", p.ns], ["Labels", `app=${p.labels.app}, tier=${p.labels.tier}`], ["Node", "node-" + (p.node + 1)], ["Matches selector", matches(p) ? "yes" : "no"]],
+  kubectl: `kubectl get pod ${p.name} -n ${p.ns} --show-labels\nkubectl label pod ${p.name} -n ${p.ns} release=canary\nkubectl get pods -A -l app=${p.labels.app}`,
+}));
+TRAYS.forEach((_, n) => Object.assign(S.PARTS["node-" + n], { manifest: () => K.node({ name: "node-" + (n + 1), cidr: `10.244.${n + 1}.0/24` }), facts: () => [["Pods", PODS.filter((p) => p.node === n).map((p) => `${p.name} (${p.ns})`).join(", ")]] }));
+Object.assign(S.PARTS.plate, { manifest: () => K.namespace({ name: "prod" }) + "\n---\n" + K.namespace({ name: "dev" }), kubectl: "kubectl get namespaces\nkubectl get pods -A\nkubectl config set-context --current --namespace=dev" });
+const demoPhase = () => ({ Pending: "Pending", ContainerCreating: "Pending", Running: "Running", Completed: "Succeeded", Error: "Running", CrashLoopBackOff: "Running" }[demo.status]);
+Object.assign(S.PARTS.demo, {
+  manifest: () => K.pod({ name: "demo", ns: "dev", labels: { app: "demo" }, node: demo.status === "Pending" ? "" : "node-2", ip: demo.status === "Pending" ? "" : "10.244.2.9", phase: demoPhase(), ready: demo.status === "Running", restarts: demo.restarts, owner: demo.kind === "job" ? { kind: "Job", name: "demo" } : undefined, containers: [{ name: "app", image: "myapp:1.4" }, { name: "log-agent", image: "fluent-bit:3", port: 2020 }], reason: demo.status === "ContainerCreating" ? "ContainerCreating" : demo.status === "Completed" ? "Completed" : undefined, state: demo.status === "CrashLoopBackOff" ? "waiting: { reason: CrashLoopBackOff }   # ← back-off before the next restart" : demo.status === "Error" ? "terminated: { reason: Error, exitCode: 1 }" : undefined }),
+  facts: () => [["Status", demo.status], ["Containers", "app, log-agent (shared IP and volume)"], ["Restarts", demo.restarts]],
+});
+Object.assign(S.PARTS.phases, { manifest: () => `# kubectl get pod demo -n dev -w\nNAME   READY   STATUS              RESTARTS\ndemo   ${demo.status === "Running" ? "2/2" : "0/2"}     ${demo.status.padEnd(18)}  ${demo.restarts}\n# STATUS shows the phase, or a container's reason (ContainerCreating, CrashLoopBackOff, Completed)` });
+
 S.setTour([
   { home: true, say: "Six pods on two nodes. Each carries labels, app and tier, and belongs to a namespace, prod or dev.", hold: 6 },
   { focus: "pod-0", zoom: 3, say: "Labels are free-form key=value tags. Almost everything finds pods by them: Services, Deployments, kubectl -l.", hold: 6 },

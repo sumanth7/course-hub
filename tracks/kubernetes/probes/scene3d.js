@@ -139,6 +139,24 @@ document.querySelectorAll("[data-do]").forEach((b) => b.addEventListener("click"
   S.renderPanel();
 }));
 
+// ---- what the inspector shows ----
+const ipOf = (i) => `10.244.1.${20 + i}`;
+const phaseOf = (p) => (p.phase === "running" ? "Running" : "Running");
+const stateOf = (p) => p.phase === "killed" ? `terminated: { reason: Error, exitCode: 137 }   # ← killed by the kubelet after liveness failed` : p.phase === "backoff" ? `waiting: { reason: CrashLoopBackOff }   # ← back-off ${Math.ceil(p.backoff)}s before the next start` : !p.appUp ? `running: {}   # ← started, app not answering yet` : `running: { startedAt: "2026-10-13T16:2${p.i}:00Z" }`;
+pods.forEach((p, i) => {
+  Object.assign(S.PARTS["pod-" + i], {
+    manifest: () => K.pod({ name: NAMES[i], labels: { app: "web" }, node: "node-1", ip: ipOf(i), ready: p.ready, restarts: p.restarts, probes: true, owner: { kind: "ReplicaSet", name: "web-5d8c" }, state: stateOf(p) }) + (spec.startup ? "" : "\n# (startupProbe removed from this pod's spec right now)"),
+    facts: () => [["State", stateLabel(p)], ["Ready", p.ready ? "yes · in Service" : "no · out of Service"], ["Restarts", p.restarts], ["Liveness fails", `${p.fails.L} / 3`], ["Readiness fails", `${p.fails.R} / 3`]],
+  });
+  Object.assign(S.PARTS["probes-" + i], {
+    manifest: () => `# the probe section of ${NAMES[i]}'s container spec\n` + (spec.startup ? `startupProbe:     # ← runs first; the others wait until it passes\n  httpGet: { path: /healthz, port: 8080 }\n  periodSeconds: 10\n  failureThreshold: 10   # ← up to 100 s to start\n` : "# startupProbe: (none)   ← so liveness starts right after initialDelaySeconds\n") + `livenessProbe:    # ← "is it stuck?" — failing restarts the container\n  httpGet: { path: /healthz, port: 8080 }\n  initialDelaySeconds: 10\n  periodSeconds: 10\n  failureThreshold: 3    # ← now ${p.fails.L}/3\nreadinessProbe:   # ← "can it take traffic?" — failing removes it from the Service\n  httpGet: { path: /ready, port: 8080 }\n  periodSeconds: 10\n  failureThreshold: 3    # ← now ${p.fails.R}/3`,
+    kubectl: `kubectl describe pod ${NAMES[i]}   # Liveness:/Readiness: lines, and probe failures under Events\nkubectl get pod ${NAMES[i]} -w`,
+    facts: () => [["Startup", spec.startup ? (p.started ? "passed" : `${p.fails.S}/10 failures`) : "not configured"], ["Liveness", `${p.fails.L}/3 failures`], ["Readiness", `${p.fails.R}/3 failures`]],
+  });
+});
+Object.assign(S.PARTS.service, { manifest: () => K.service({ name: "web", endpoints: pods.filter((p) => p.ready).map((p) => ipOf(p.i) + ":8080") }), facts: () => [["Endpoints", pods.filter((p) => p.ready).map((p) => NAMES[p.i]).join(", ") || "none"]] });
+Object.assign(S.PARTS.bench, { manifest: K.kubeletConfig(), facts: () => [["Pods", 3], ["Restarts so far", pods.reduce((a, p) => a + p.restarts, 0)]] });
+
 S.setTour([
   { home: true, say: "Three pods on one node. Above each, the kubelet's probes tap it once per period: Startup, Liveness, Readiness.", hold: 6 },
   { focus: "probes-1", zoom: 3, say: "Each tap lights a result lamp. Failures are counted on the tower; three in a row is the default threshold.", hold: 6 },

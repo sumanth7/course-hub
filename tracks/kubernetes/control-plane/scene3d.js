@@ -172,6 +172,18 @@ function syncUi() {
   ui.next.disabled = auto || !queue.length || !!current;
 }
 const idle = () => !queue.length && !current;
+// ---- what the inspector shows ----
+const keys = () => ["/registry/namespaces/default", ...(db.deploy ? ["/registry/deployments/default/web"] : []), ...(db.rs ? ["/registry/replicasets/default/web-6b7f"] : []), ...db.pods.map((p) => "/registry/pods/default/" + p.name)];
+Object.assign(S.PARTS.api, { manifest: K.apiserver(), facts: () => [["Last request", cmd ? "kubectl " + cmd : "none yet"]], kubectl: "kubectl get --raw /healthz\nkubectl api-resources\nkubectl get --raw /apis/apps/v1/namespaces/default/deployments" });
+Object.assign(S.PARTS.etcd, { manifest: () => K.etcd({ rev: db.rev, keys: keys() }), facts: () => [["Revision", db.rev], ["Keys", keys().length]] });
+Object.assign(S.PARTS.cm, { manifest: () => (db.rs ? K.replicaset({ name: "web-6b7f", replicas: db.rs.replicas, ready: db.pods.filter((p) => p.phase === "Running").length }) + "\n# ← the ReplicaSet the deployment controller created\n" : "") + K.controllerManager() });
+Object.assign(S.PARTS.sched, { manifest: K.schedulerConfig(), facts: () => [["Unscheduled pods", db.pods.filter((p) => !p.node).length]] });
+Object.assign(S.PARTS.kubectl, { manifest: () => (db.deploy ? K.deployment({ name: "web", replicas: db.deploy.replicas, ready: db.pods.filter((p) => p.phase === "Running").length, updated: db.pods.length, available: db.pods.filter((p) => p.phase === "Running").length }) : "# web.yaml — what kubectl apply will send:\n" + K.deployment({ name: "web", replicas: 3, ready: 0, updated: 0, available: 0 })), facts: () => [["Last command", cmd ? "kubectl " + cmd : "none"]] });
+Object.assign(S.PARTS.kubelet, { manifest: K.kubeletConfig() });
+Object.assign(S.PARTS.runtime, { manifest: () => `# containerd, seen through crictl on node-1\n$ crictl ps\nCONTAINER  IMAGE        STATE    NAME  POD\n${db.pods.filter((p) => p.phase === "Running").map((p, i) => `${(0xa1c3 + i * 977).toString(16)}       nginx:1.27   Running  web   ${p.name}`).join("\n") || "(none)"}`, kubectl: "crictl ps\ncrictl images" });
+Object.assign(S.PARTS.node, { manifest: () => K.node({ name: "node-1" }) });
+podObjs.forEach((o, i) => Object.assign(S.PARTS[o.id], { manifest: () => { const p = db.pods[i]; return p ? K.pod({ name: p.name, labels: { app: "web", "pod-template-hash": "6b7f" }, image: "nginx:1.27", node: p.node, ip: p.node ? `10.244.1.${50 + i}` : "", phase: p.phase, ready: p.phase === "Running", owner: { kind: "ReplicaSet", name: "web-6b7f" } }) : ""; } }));
+
 S.setTour([
   { home: true, say: "The control plane, and one node. Every part connects only to the API server in the middle.", run: reset, hold: 5 },
   { focus: "kubectl", zoom: 2.4, say: "You run kubectl apply. kubectl sends the Deployment to the API server, and that is all it does.", run: apply, hold: 4 },

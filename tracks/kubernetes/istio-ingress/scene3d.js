@@ -143,6 +143,12 @@ function syncUi() {
   if (ui.status.textContent !== m) { ui.status.textContent = m; ui.status.dataset.tone = v2dead || ej.length ? "bad" : ""; }
 }
 
+// ---- what the inspector shows ----
+Object.assign(S.PARTS.gateway, { manifest: K.gateway(), facts: () => [["Port", "443 HTTPS"], ["Host", "bookinfo.io"], ["Certificate", "Secret bookinfo-cert"]], kubectl: "kubectl get gateway bookinfo-gateway -o yaml\nistioctl proxy-config listeners deploy/istio-ingressgateway -n istio-system" });
+Object.assign(S.PARTS.vs, { manifest: () => K.virtualservice({ weight: mesh.applied }) + (mesh.push > 0 ? `\n# ← you set ${mesh.weight}%; istiod is still pushing it to the gateway` : ""), facts: () => [["Split now", `v1 ${100 - mesh.applied}% · v2 ${mesh.applied}%`], ["jason", "always v2"]], kubectl: "kubectl get virtualservice reviews -o yaml\nistioctl proxy-config routes deploy/istio-ingressgateway -n istio-system" });
+Object.assign(S.PARTS.istiod, { manifest: () => K.virtualservice({ weight: mesh.weight }) + "\n# ← what you applied; istiod compiles it to Envoy config and pushes it over xDS", facts: () => [["Your weight", mesh.weight + "%"], ["Gateway has", mesh.applied + "%"], ["Push", mesh.push > 0 ? "in progress" : "done"]], kubectl: "istioctl proxy-status   # is every proxy SYNCED?" });
+PODS.forEach((p, i) => Object.assign(S.PARTS["pod-" + i], { manifest: () => K.destinationrule() + "\n---\n" + K.pod({ name: `reviews-${p.sub}-${["a1", "b2", "c3", "d4"][i]}`, labels: { app: "reviews", version: p.sub }, image: `reviews:${p.sub}`, node: "node-1", ip: `10.244.1.${80 + i}`, ready: inPool(i), containers: [{ name: "reviews", image: `reviews:${p.sub}` }, { name: "istio-proxy", image: "istio/proxyv2:1.23", port: 15001 }] }), facts: () => [["Subset", p.sub], ["Sidecar", "istio-proxy (Envoy)"], ["App", mesh.down[i] ? "returning 5xx" : "healthy"], ["In pool", inPool(i) ? "yes" : "ejected"]] }));
+
 S.setTour([
   { home: true, say: "Requests arrive on the right, sealed with TLS (the ring). Watch them go through the gateway to v1 and v2 pods.", hold: 5 },
   { focus: "gateway", zoom: 2.4, say: "The Gateway ends the client's TLS with the certificate in its Secret, the cartridge on top. The ring comes off.", hold: 6 },

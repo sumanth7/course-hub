@@ -141,6 +141,12 @@ function syncUi() {
   set(ui.log, log.join("\n"));
 }
 
+// ---- what the inspector shows ----
+Object.assign(S.PARTS.image, { manifest: () => `# docker image history shop:v${img.built || 1}\nIMAGE         CREATED BY                       SIZE\n${LAYERS.slice().reverse().map((l, k) => `${["a1f3", "9c2e", "4b7d", "e05c"][k]}…        ${l.padEnd(32)} ${["0B", "1.2MB", "48MB", "74MB"][k]}${img.cached && 3 - k < img.cached ? "   # ← from cache" : ""}`).join("\n")}`, kubectl: "docker image history shop:v1\ndocker image inspect shop:v1" });
+Object.assign(S.PARTS.registry, { manifest: () => `# the image a pod runs is named in its spec:\ncontainers:\n- name: shop\n  image: ghcr.io/acme/shop:v${img.pushed[1] ? 2 : 1}   # ← registry / repository : tag\n  imagePullPolicy: IfNotPresent\n# tags in the registry: ${img.pushed.map((p, k) => (p ? "v" + (k + 1) : "")).filter(Boolean).join(", ") || "none yet"}` });
+HOSTS.forEach((_, n) => Object.assign(S.PARTS["host-" + n], { manifest: () => (declarative ? K.deployment({ name: "shop", replicas: 3, image: "ghcr.io/acme/shop:v1", ready: hostState.filter((h) => h.up && h.run).length, updated: 3, available: hostState.filter((h) => h.up && h.run).length }) + "\n# ← declarative: you state 3; the controller keeps it at 3" : `# imperative: what your script ran on host-${n + 1}, once\n$ docker run -d --name shop ghcr.io/acme/shop:v1\n# if this host dies, nothing runs this again`), facts: () => [["State", hostState[n].up ? "up" : "down"], ["Running", hostState[n].run ? "shop:v" + hostState[n].run.tag : "nothing"]] }));
+Object.assign(S.PARTS.cthost, { manifest: () => K.pod({ name: "shop-7d4f", labels: { app: "shop" }, image: "ghcr.io/acme/shop:v1", node: "host-1", ip: "10.244.1.5" }) + "\n# ← in Kubernetes, containers always run inside pods" });
+
 S.setTour([
   { home: true, say: "Two machines on identical hardware. One runs virtual machines, the other containers.", hold: 5 },
   { focus: "vmhost", zoom: 2, say: "Boot them. Each VM starts a whole operating system, so its lamp takes seconds...", run: boot, hold: 4 },
