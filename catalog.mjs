@@ -56,7 +56,7 @@ export const TRACKS = [
       { slug: "security", title: "ServiceAccounts & RBAC", status: "live", minutes: 8,
         goal: "Give a pod an identity and grant people and pods only the access they need.",
         concepts: ["ServiceAccounts", "RBAC roles & bindings", "Pod security basics"] },
-      { slug: "operating", title: "Debugging & Helm", status: "planned",
+      { slug: "operating", title: "Debugging & Helm", status: "live", minutes: 10,
         goal: "Find out why a pod isn't working, and install an app packaged with Helm.",
         concepts: ["describe, logs, exec, events", "Helm", "Observability basics"] },
       { slug: "istio-ingress", title: "Beyond: Istio ingress", status: "live", minutes: 12,
