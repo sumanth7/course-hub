@@ -149,6 +149,48 @@ Object.assign(S.PARTS.vs, { manifest: () => K.virtualservice({ weight: mesh.appl
 Object.assign(S.PARTS.istiod, { manifest: () => K.virtualservice({ weight: mesh.weight }) + "\n# ← what you applied; istiod compiles it to Envoy config and pushes it over xDS", facts: () => [["Your weight", mesh.weight + "%"], ["Gateway has", mesh.applied + "%"], ["Push", mesh.push > 0 ? "in progress" : "done"]], kubectl: "istioctl proxy-status   # is every proxy SYNCED?" });
 PODS.forEach((p, i) => Object.assign(S.PARTS["pod-" + i], { manifest: () => K.destinationrule() + "\n---\n" + K.pod({ name: `reviews-${p.sub}-${["a1", "b2", "c3", "d4"][i]}`, labels: { app: "reviews", version: p.sub }, image: `reviews:${p.sub}`, node: "node-1", ip: `10.244.1.${80 + i}`, ready: inPool(i), containers: [{ name: "reviews", image: `reviews:${p.sub}` }, { name: "istio-proxy", image: "istio/proxyv2:1.23", port: 15001 }] }), facts: () => [["Subset", p.sub], ["Sidecar", "istio-proxy (Envoy)"], ["App", mesh.down[i] ? "returning 5xx" : "healthy"], ["In pool", inPool(i) ? "yes" : "ejected"]] }));
 
+// ---- kubectl and the YAML editor ----
+// the VirtualService weights are editable; istioctl shows the push; curl sends a request
+const W = "spec.http[1].route";
+Object.assign(S.PARTS.vs, { fields: {
+  [W + "[0].weight"]: { check: (v, all) => (!Number.isInteger(v) || v < 0 ? "weight must be a whole number ≥ 0" : v + (all[W + "[1].weight"] || 0) !== 100 ? `total destination weight ${v + (all[W + "[1].weight"] || 0)} != 100` : ""), set: () => {} },
+  [W + "[1].weight"]: { check: (v) => (!Number.isInteger(v) || v < 0 ? "weight must be a whole number ≥ 0" : v % 10 ? "this lesson's slide moves in steps of 10" : ""), set: (v) => setWeight(v) },
+} });
+S.PARTS.istiod.fields = S.PARTS.vs.fields;
+const NAMES_I = PODS.map((p, i) => `reviews-${p.sub}-${["a1", "b2", "c3", "d4"][i]}`);
+S.kube({
+  ns: "default",
+  help: ["kubectl get gateway,virtualservice,destinationrule", "kubectl edit virtualservice reviews   (weights; they must add up to 100)", "curl https://bookinfo.io/reviews [-H 'end-user: jason']", "istioctl proxy-status   ·   istioctl proxy-config routes deploy/istio-ingressgateway", "kubectl exec <reviews pod> -- /app/fail   (toggle errors; outlier detection ejects it)"],
+  examples: ["kubectl get vs,dr,gw", "curl https://bookinfo.io/reviews", "curl -H 'end-user: jason' https://bookinfo.io/reviews", "kubectl edit vs reviews", "istioctl proxy-status", "kubectl exec reviews-v2-c3 -- /app/fail", "kubectl get pods"],
+  verbs: {
+    exec({ pos }) {
+      const i = NAMES_I.indexOf(pos[0]);
+      if (i < 0) return { err: `Error from server (NotFound): pods "${pos[0] || ""}" not found` };
+      if (pos.slice(1).join(" ") !== "/app/fail") return { err: "this simulated container runs /app/fail (toggles 5xx errors)" };
+      S.stopTour(); mesh.down[i] = !mesh.down[i];
+      return [mesh.down[i] ? "app now answers 503 · outlier detection will eject it after 2 errors" : "app healthy again"];
+    },
+  },
+  tools: {
+    curl({ pos, f }) {
+      const url = pos.find((x) => /bookinfo\.io/.test(x));
+      if (!url) return { err: "curl: (6) Could not resolve host. Try https://bookinfo.io/reviews" };
+      const jason = /end-user:\s*jason/i.test(String(f["-H"] || ""));
+      const sub = jason || Math.random() * 100 < mesh.applied ? "v2" : "v1";
+      const pool = PODS.map((p, i) => i).filter((i) => PODS[i].sub === sub && inPool(i));
+      if (!pool.length) return { err: "HTTP/2 503\nno healthy upstream" };
+      const i = pool[Math.floor(Math.random() * pool.length)];
+      return mesh.down[i] ? { err: `HTTP/2 503   # from ${NAMES_I[i]}` } : [`HTTP/2 200   # routed to ${sub}${jason ? " (header match)" : ` (weight ${sub === "v2" ? mesh.applied : 100 - mesh.applied}%)`} · ${NAMES_I[i]}`, `{"reviews":"${sub === "v2" ? "★★★★☆ with ratings" : "plain text, no ratings"}"}`];
+    },
+    istioctl({ pos }) {
+      if (pos[0] === "proxy-status" || pos[0] === "ps") return ["NAME                                   CDS      LDS      EDS      RDS", `istio-ingressgateway-7c9f.istio-system   SYNCED   SYNCED   SYNCED   ${mesh.push > 0 ? "STALE    # ← istiod is still pushing the new weights" : "SYNCED"}`, ...NAMES_I.map((n) => `${n}.default`.padEnd(39) + "SYNCED   SYNCED   SYNCED   SYNCED")];
+      if (pos[0] === "proxy-config" && /^routes?$/.test(pos[1] || "")) return ["NAME      VHOST NAME        DOMAINS       MATCH                    VIRTUAL SERVICE", "https.443 bookinfo.io:443   bookinfo.io   /* + end-user=jason      reviews.default", `https.443 bookinfo.io:443   bookinfo.io   /*  (v1 ${100 - mesh.applied}, v2 ${mesh.applied})   reviews.default`];
+      if (pos[0] === "analyze") return ["✔ No validation issues found when analyzing namespace: default."];
+      return { err: "this lesson simulates istioctl proxy-status, proxy-config routes <pod>, analyze" };
+    },
+  },
+});
+// ---- end kubectl ----
 S.setTour([
   { home: true, say: "Requests arrive on the right, sealed with TLS (the ring). Watch them go through the gateway to v1 and v2 pods.", hold: 5 },
   { focus: "gateway", zoom: 2.4, say: "The Gateway ends the client's TLS with the certificate in its Secret, the cartridge on top. The ring comes off.", hold: 6 },

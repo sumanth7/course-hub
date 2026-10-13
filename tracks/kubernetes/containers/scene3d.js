@@ -147,6 +147,49 @@ Object.assign(S.PARTS.registry, { manifest: () => `# the image a pod runs is nam
 HOSTS.forEach((_, n) => Object.assign(S.PARTS["host-" + n], { manifest: () => (declarative ? K.deployment({ name: "shop", replicas: 3, image: "ghcr.io/acme/shop:v1", ready: hostState.filter((h) => h.up && h.run).length, updated: 3, available: hostState.filter((h) => h.up && h.run).length }) + "\n# ← declarative: you state 3; the controller keeps it at 3" : `# imperative: what your script ran on host-${n + 1}, once\n$ docker run -d --name shop ghcr.io/acme/shop:v1\n# if this host dies, nothing runs this again`), facts: () => [["State", hostState[n].up ? "up" : "down"], ["Running", hostState[n].run ? "shop:v" + hostState[n].run.tag : "nothing"]] }));
 Object.assign(S.PARTS.cthost, { manifest: () => K.pod({ name: "shop-7d4f", labels: { app: "shop" }, image: "ghcr.io/acme/shop:v1", node: "host-1", ip: "10.244.1.5" }) + "\n# ← in Kubernetes, containers always run inside pods" });
 
+// ---- kubectl and the YAML editor ----
+// docker for the image, kubectl (or a script) to run it; ssh to pull the plug on a host
+const tagOk = (ref, want) => new RegExp(`^(ghcr\\.io/acme/)?shop:v${want}$`).test(ref || "");
+const podsNow = () => hostState.map((h, n) => (h.up && h.run ? { kind: "Pod", name: `shop-7d4f-${["k2m4p", "x8qpz", "t3vnc"][n]}`, part: "host-" + n, labels: { app: "shop" }, row: { READY: h.run.t > 0.8 ? "1/1" : "0/1", STATUS: h.run.t > 0.8 ? "Running" : "ContainerCreating", RESTARTS: 0 }, wide: { IP: `10.244.${n + 1}.5`, NODE: "host-" + (n + 1) }, logs: () => [`shop v${h.run.tag} listening on :8080`] } : null)).filter(Boolean)
+  // a replacement the controller started on a healthy host
+  .concat(hostState.map((h, n) => (h.up && h.run && h.extra ? { kind: "Pod", name: `shop-7d4f-r${n}w9q`, part: "host-" + n, labels: { app: "shop" }, row: { READY: "1/1", STATUS: "Running", RESTARTS: 0 }, wide: { IP: `10.244.${n + 1}.6`, NODE: "host-" + (n + 1) } } : null)).filter(Boolean));
+S.kube({
+  ns: "default", auto: false,
+  welcome: "# Build and push with docker, then run it: kubectl apply -f shop.yaml (declarative) or docker run on each host (a script).",
+  help: ["docker build -t shop:v1 .   (again after a code change: shop:v2)", "docker push ghcr.io/acme/shop:v1   ·   docker images   ·   docker history shop:v1", "kubectl apply -f shop.yaml   (3 replicas, kept running)", "ssh host-N docker run -d ghcr.io/acme/shop:v1   (one host, once)", "ssh host-2 sudo poweroff   (kill a host)", "kubectl get pods -o wide"],
+  examples: ["docker build -t shop:v1 .", "docker push ghcr.io/acme/shop:v1", "kubectl apply -f shop.yaml", "kubectl get pods -o wide", "ssh host-2 sudo poweroff", "kubectl get pods -w", "docker history shop:v1"],
+  objects: () => (declarative ? [{ kind: "Deployment", name: "shop", part: "host-0", labels: { app: "shop" }, row: { READY: `${podsNow().length}/${want || 3}`, "UP-TO-DATE": podsNow().length, AVAILABLE: podsNow().length } }, ...podsNow()] : []),
+  verbs: {
+    apply({ f }) {
+      if (f["-f"] !== "shop.yaml") return f["-f"] === "-" ? undefined : { err: `error: the path "${f["-f"]}" does not exist. This lesson has shop.yaml` };
+      if (!img.pushed.some(Boolean)) return { err: 'Warning: the image isn\'t in the registry yet: push it first (docker push ghcr.io/acme/shop:v1)\n# pods would sit in ImagePullBackOff' };
+      S.stopTour(); if (!declarative) toggleMode(); runAll(); return ["deployment.apps/shop created   # replicas: 3: the controller will keep 3 running"];
+    },
+    get({ pos }) { if (!declarative && /^(po|pods?|deploy|deployments?)$/.test(pos[0] || "")) return ["No resources found in default namespace.   # in script mode nothing runs under Kubernetes: ssh host-N docker ps"]; return undefined; },
+  },
+  tools: {
+    docker({ pos, f }) {
+      const [cmd, a] = pos;
+      if (cmd === "build") { if (!f["-t"] && !pos.includes(".")) return { err: '"docker build" requires exactly 1 argument: docker build -t shop:v1 .' }; if (img.building) return { err: "a build is already running" }; S.stopTour(); const n = img.built ? 2 : 1; build(); return [`[+] Building shop:v${n}`, ...LAYERS.map((l, k) => ` => ${n === 2 && k < 2 ? "CACHED " : ""}[${k + 1}/4] ${l}`), ` => naming to docker.io/library/shop:v${n}`]; }
+      if (cmd === "push") { if (!img.built) return { err: "An image does not exist locally with the tag: shop. Build it first." }; if (!tagOk(a, img.tag)) return { err: `An image does not exist locally with the tag: ${a || ""}   # push ghcr.io/acme/shop:v${img.tag}` }; S.stopTour(); push(); return [`The push refers to repository [ghcr.io/acme/shop]`, `v${img.tag}: digest: sha256:9c2e4b7d… size: 1789`]; }
+      if (cmd === "images") return ["REPOSITORY   TAG   IMAGE ID       SIZE", ...(img.built ? Array.from({ length: img.tag }, (_, k) => `shop         v${k + 1}    ${["a1f34b7d9c2e", "e05c9c2ea1f3"][k]}   ${k ? "201MB" : "198MB"}`) : [])];
+      if (cmd === "history") return ["IMAGE          CREATED BY                    SIZE", ...LAYERS.slice().reverse().map((l, k) => `${["a1f3", "9c2e", "4b7d", "e05c"][k]}…        ${l.padEnd(30)}${["0B", "1.2MB", "48MB", "74MB"][k]}`)];
+      if (cmd === "run") return { err: "docker run starts a container on this machine; to run on a host: ssh host-1 docker run -d ghcr.io/acme/shop:v1" };
+      return { err: `docker: '${cmd || ""}' is not simulated here (build, push, images, history)` };
+    },
+    ssh({ pos }) {
+      const [host, ...rest] = pos, n = ["host-1", "host-2", "host-3"].indexOf(host), line = rest.join(" ");
+      if (n < 0) return { err: `ssh: Could not resolve hostname ${host || ""}: host-1, host-2 or host-3` };
+      if (!hostState[n].up) return { err: `ssh: connect to host ${host} port 22: No route to host` };
+      if (/poweroff|shutdown|halt/.test(line)) { S.stopTour(); kill(n); return [`Connection to ${host} closed by remote host.`]; }
+      if (/^docker ps/.test(line)) return ["CONTAINER ID   IMAGE                      STATUS", ...(hostState[n].run ? [`3f9c1e2a7b4d   ghcr.io/acme/shop:v${hostState[n].run.tag}   Up ${Math.round(hostState[n].run.t)} seconds`] : [])];
+      const m = line.match(/^docker run -d (\S+)$/);
+      if (m) { const tag = [1, 2].find((v) => tagOk(m[1], v) && img.pushed[v - 1]); if (!tag) return { err: `Unable to find image '${m[1]}' locally\ndocker: Error response from daemon: manifest unknown` }; S.stopTour(); if (declarative) toggleMode(); want = 3; pull(n, tag); logIt(`$ ssh ${host} docker run -d shop:v${tag}`); return ["3f9c1e2a7b4d5e6f…   # started once; nothing will restart it"]; }
+      return { err: "this lesson's hosts run: docker ps, docker run -d <image>, sudo poweroff" };
+    },
+  },
+});
+// ---- end kubectl ----
 S.setTour([
   { home: true, say: "Two machines on identical hardware. One runs virtual machines, the other containers.", hold: 5 },
   { focus: "vmhost", zoom: 2, say: "Boot them. Each VM starts a whole operating system, so its lamp takes seconds...", run: boot, hold: 4 },

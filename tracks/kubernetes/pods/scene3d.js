@@ -94,7 +94,7 @@ S.onTick((dt) => {
   appLamp.set(demo.status === "Running" ? "on" : demo.status === "Error" || demo.status === "CrashLoopBackOff" ? "bad" : "off");
   sideLamp.set(["Running", "Error", "CrashLoopBackOff"].includes(demo.status) ? "on" : "off");
   const n = PODS.filter(matches).length;
-  S.say(`${n} pod${n === 1 ? "" : "s"} match ${sel} ${ns === "all" ? "in all namespaces" : "in " + ns} · demo: ${demo.status}`);
+  S.say(`${n} pod${n === 1 ? "" : "s"} match ${sel || "(all labels)"} ${ns === "all" ? "in all namespaces" : "in " + ns} · demo: ${demo.status}`);
   syncUi();
 });
 
@@ -111,9 +111,9 @@ function syncUi() {
   ui.ns.forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.ns === ns)));
   const pad = (s, w) => (s + " ".repeat(w)).slice(0, w);
   const rows = PODS.filter(matches).map((p) => [ns === "all" ? p.ns : null, p.name, "2/2", "Running", "0"]);
-  if ((ns === "all" || ns === "dev") && sel === "app=demo") rows.push([ns === "all" ? "dev" : null, "demo", demo.status === "Running" ? "2/2" : "1/2", demo.status, String(demo.restarts)]);
+  if ((ns === "all" || ns === "dev") && sel === "app=demo" && demo.status !== "Gone") rows.push([ns === "all" ? "dev" : null, "demo", demo.status === "Running" ? "2/2" : "1/2", demo.status, String(demo.restarts)]);
   const head = (ns === "all" ? "NAMESPACE  " : "") + "NAME       READY   STATUS              RESTARTS";
-  const text = `$ kubectl get pods ${ns === "all" ? "-A" : "-n " + ns} -l ${sel}\n` + (rows.length ? head + "\n" + rows.map((r) => (r[0] !== null ? pad(r[0], 11) : "") + pad(r[1], 11) + pad(r[2], 8) + pad(r[3], 20) + r[4]).join("\n") : `No resources found${ns !== "all" ? " in " + ns + " namespace" : ""}.`);
+  const text = `$ kubectl get pods ${ns === "all" ? "-A" : "-n " + ns}${sel ? " -l " + sel : ""}\n` + (rows.length ? head + "\n" + rows.map((r) => (r[0] !== null ? pad(r[0], 11) : "") + pad(r[1], 11) + pad(r[2], 8) + pad(r[3], 20) + r[4]).join("\n") : `No resources found${ns !== "all" ? " in " + ns + " namespace" : ""}.`);
   if (ui.term.textContent !== text) ui.term.textContent = text;
   const desc = { server: "A server pod: Pending while the scheduler picks a node, ContainerCreating while the image is pulled, then Running.", job: "A Job's pod runs its command and exits 0: Succeeded (kubectl shows Completed), and it is not restarted.", crash: "A crashing pod: the app exits with an error, the kubelet restarts it, and each restart waits longer: CrashLoopBackOff." }[demo.kind];
   if (ui.status.textContent !== desc) { ui.status.textContent = desc; ui.status.dataset.tone = demo.kind === "crash" ? "bad" : ""; }
@@ -134,6 +134,63 @@ Object.assign(S.PARTS.demo, {
 });
 Object.assign(S.PARTS.phases, { manifest: () => `# kubectl get pod demo -n dev -w\nNAME   READY   STATUS              RESTARTS\ndemo   ${demo.status === "Running" ? "2/2" : "0/2"}     ${demo.status.padEnd(18)}  ${demo.restarts}\n# STATUS shows the phase, or a container's reason (ContainerCreating, CrashLoopBackOff, Completed)` });
 
+// ---- kubectl and the YAML editor ----
+// labels are editable on every pod: kubectl label, or Edit in the panel
+const labelFields = (p) => ({ "metadata.labels.*": { optional: true, check: (v) => (v !== undefined && !/^[\w.-]{0,63}$/.test(String(v)) ? "a valid label must be 63 characters or less: letters, digits, '-', '_' or '.'" : ""), set: (v, all, path) => { const k = path.split(".").slice(2).join("."); if (v === undefined) delete p.labels[k]; else p.labels[k] = String(v); } } });
+PODS.forEach((p, i) => Object.assign(S.PARTS["pod-" + i], { fields: labelFields(p) }));
+// the demo pod can be deleted and run again
+const demoManifest = S.PARTS.demo.manifest;
+S.PARTS.demo.manifest = () => (demo.status === "Gone" ? "" : demoManifest());
+const DEMO_LOGS = { server: ["myapp 1.4 starting", "listening on :8080", "GET /healthz 200"], job: ["report: reading 120 rows", "report: wrote report-2026-10-13.csv", "done in 3.2s"], crash: ["myapp 1.4 starting", "panic: open /config/app.yaml: no such file or directory", "exit status 1"] };
+let lastDemo = "";
+S.onTick(() => {
+  if (demo.status === "Terminating" && demo.t > 1) demo.status = "Gone";
+  if (demo.status === lastDemo) return;
+  const ev = (type, reason, msg, from) => S.event(type, reason, "pod/demo", msg, from);
+  if (demo.status === "Pending") ev("Normal", "Scheduled", "Successfully assigned dev/demo to node-2", "default-scheduler");
+  if (demo.status === "ContainerCreating") ev("Normal", "Pulling", `Pulling image "${demoImage}"`);
+  if (demo.status === "Running") ev("Normal", "Started", lastDemo === "CrashLoopBackOff" ? "Started container app (restart)" : "Started container app");
+  if (demo.status === "Completed") ev("Normal", "Completed", "Container app exited with code 0");
+  if (demo.status === "Error") ev("Warning", "BackOff", "Back-off restarting failed container app");
+  lastDemo = demo.status;
+});
+let demoImage = "myapp:1.4";
+const kindOfImage = (im) => (/^(report|batch)/.test(im) ? "job" : /^crash/.test(im) ? "crash" : "server");
+S.kube({
+  ns: "prod",
+  help: ["kubectl get pods [-n dev | -A] [-l app=web] [--show-labels]   (lights up the matching pods)", "kubectl label pod <name> [-n ns] key=value [--overwrite] | key-", "kubectl run demo -n dev --image=myapp:1.4 | report:1.0 | crashy:1.0", "kubectl delete pod demo -n dev", "kubectl describe pod <name>   ·   kubectl logs demo -n dev"],
+  examples: ["kubectl get pods --show-labels", "kubectl get pods -A -l tier=backend", "kubectl get pods -n dev", "kubectl label pod web-7d4f tier=frontend --overwrite", "kubectl get pods -l tier=frontend", "kubectl delete pod demo -n dev", "kubectl run demo -n dev --image=crashy:1.0", "kubectl get pod demo -n dev -w", "kubectl logs demo -n dev"],
+  // listing pods with -l / -n / -A also sets the scene's selector
+  onGet(pos, f) {
+    if (!/^(po|pods?)$/.test(pos[0] || "") || pos.length > 1) return;
+    sel = f["-l"] && f["-l"] !== true ? String(f["-l"]) : "";
+    ns = f["-A"] ? "all" : f["-n"] && f["-n"] !== true ? String(f["-n"]) : "prod";
+    S.renderPanel();
+  },
+  objects: () => demo.status === "Gone" ? [] : [{ kind: "Pod", name: "demo", ns: "dev", part: "demo", labels: { app: "demo" }, row: { READY: demo.status === "Running" ? "2/2" : "1/2", STATUS: demo.status, RESTARTS: demo.restarts }, wide: { IP: demo.status === "Pending" ? "<none>" : "10.244.2.9", NODE: demo.status === "Pending" ? "<none>" : "node-2" }, logs: () => (["Pending", "ContainerCreating"].includes(demo.status) ? [`Error from server (BadRequest): container "app" in pod "demo" is waiting to start: ${demo.status}`] : DEMO_LOGS[demo.kind]) }],
+  verbs: {
+    run({ pos, f }) {
+      const name = pos[0], nsArg = f["-n"] || "prod";
+      if (!name) return { err: "error: NAME is required for run" };
+      if (!f["--image"] || f["--image"] === true) return { err: 'error: required flag(s) "image" not set' };
+      if (name !== "demo" || nsArg !== "dev") return { err: `This lesson has one bench for a new pod: kubectl run demo -n dev --image=${f["--image"]}` };
+      if (demo.status !== "Gone") return { err: 'Error from server (AlreadyExists): pods "demo" already exists. Delete it first: kubectl delete pod demo -n dev' };
+      S.stopTour(); demoImage = String(f["--image"]); run(kindOfImage(demoImage)); sel = "app=demo"; ns = "dev";
+      return "pod/demo created";
+    },
+    delete({ pos, f }) {
+      let [what, name] = pos; if (what && what.includes("/")) [what, name] = what.split("/");
+      if (!/^(po|pods?)$/.test(what || "")) return { err: what ? `kubectl delete ${what} isn't part of this lesson; try kubectl delete pod demo -n dev` : "error: You must provide one or more resources by argument or filename." };
+      if (name !== "demo") { const p = PODS.find((x) => x.name === name); return { err: p ? `This lesson keeps ${name} so the selectors have something to find. Delete the demo pod instead: kubectl delete pod demo -n dev` : `Error from server (NotFound): pods "${name}" not found` }; }
+      if ((f["-n"] || "prod") !== "dev") return { err: 'Error from server (NotFound): pods "demo" not found   # it lives in dev: add -n dev' };
+      if (demo.status === "Gone" || demo.status === "Terminating") return { err: 'Error from server (NotFound): pods "demo" not found' };
+      S.stopTour(); demo.status = "Terminating"; demo.t = 0;
+      S.event("Normal", "Killing", "pod/demo", "Stopping container app");
+      return 'pod "demo" deleted';
+    },
+  },
+});
+// ---- end kubectl ----
 S.setTour([
   { home: true, say: "Six pods on two nodes. Each carries labels, app and tier, and belongs to a namespace, prod or dev.", hold: 6 },
   { focus: "pod-0", zoom: 3, say: "Labels are free-form key=value tags. Almost everything finds pods by them: Services, Deployments, kubectl -l.", hold: 6 },

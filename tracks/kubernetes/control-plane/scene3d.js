@@ -176,7 +176,7 @@ const idle = () => !queue.length && !current;
 const keys = () => ["/registry/namespaces/default", ...(db.deploy ? ["/registry/deployments/default/web"] : []), ...(db.rs ? ["/registry/replicasets/default/web-6b7f"] : []), ...db.pods.map((p) => "/registry/pods/default/" + p.name)];
 Object.assign(S.PARTS.api, { manifest: K.apiserver(), facts: () => [["Last request", cmd ? "kubectl " + cmd : "none yet"]], kubectl: "kubectl get --raw /healthz\nkubectl api-resources\nkubectl get --raw /apis/apps/v1/namespaces/default/deployments" });
 Object.assign(S.PARTS.etcd, { manifest: () => K.etcd({ rev: db.rev, keys: keys() }), facts: () => [["Revision", db.rev], ["Keys", keys().length]] });
-Object.assign(S.PARTS.cm, { manifest: () => (db.rs ? K.replicaset({ name: "web-6b7f", replicas: db.rs.replicas, ready: db.pods.filter((p) => p.phase === "Running").length }) + "\n# ← the ReplicaSet the deployment controller created\n" : "") + K.controllerManager() });
+Object.assign(S.PARTS.cm, { manifest: () => (db.rs ? K.replicaset({ name: "web-6b7f", replicas: db.rs.replicas, ready: db.pods.filter((p) => p.phase === "Running").length }) + "\n# ← the ReplicaSet the deployment controller created\n---\n" : "") + K.controllerManager() });
 Object.assign(S.PARTS.sched, { manifest: K.schedulerConfig(), facts: () => [["Unscheduled pods", db.pods.filter((p) => !p.node).length]] });
 Object.assign(S.PARTS.kubectl, { manifest: () => (db.deploy ? K.deployment({ name: "web", replicas: db.deploy.replicas, ready: db.pods.filter((p) => p.phase === "Running").length, updated: db.pods.length, available: db.pods.filter((p) => p.phase === "Running").length }) : "# web.yaml — what kubectl apply will send:\n" + K.deployment({ name: "web", replicas: 3, ready: 0, updated: 0, available: 0 })), facts: () => [["Last command", cmd ? "kubectl " + cmd : "none"]] });
 Object.assign(S.PARTS.kubelet, { manifest: K.kubeletConfig() });
@@ -184,6 +184,46 @@ Object.assign(S.PARTS.runtime, { manifest: () => `# containerd, seen through cri
 Object.assign(S.PARTS.node, { manifest: () => K.node({ name: "node-1" }) });
 podObjs.forEach((o, i) => Object.assign(S.PARTS[o.id], { manifest: () => { const p = db.pods[i]; return p ? K.pod({ name: p.name, labels: { app: "web", "pod-template-hash": "6b7f" }, image: "nginx:1.27", node: p.node, ip: p.node ? `10.244.1.${50 + i}` : "", phase: p.phase, ready: p.phase === "Running", owner: { kind: "ReplicaSet", name: "web-6b7f" } }) : ""; } }));
 
+// ---- kubectl and the YAML editor ----
+// every command here travels the same path the lesson draws: kubectl → API server → etcd → watchers
+Object.assign(S.PARTS.kubectl, { fields: (kind) => (kind === "Deployment" ? { "spec.replicas": { check: (v) => (!Number.isInteger(v) || v < 1 || v > 7 ? "this lesson's node has room for 1–7 web pods" : flowing() ? "the last request is still flowing; try again in a moment" : ""), set: (v) => { if (v !== db.deploy.replicas) scale(v); } } } : null) });
+const flowing = () => queue.length > 0 || !!current;
+const busyMsg = () => ({ err: `# the last request is still flowing (step ${stepNo} of ${stepTotal}); wait for it, or press Next if you're in step mode` });
+S.kube({
+  ns: "default",
+  welcome: "# Each command here is animated: watch it go kubectl → API server → etcd, and the controllers react.",
+  help: ["kubectl apply -f web.yaml", "kubectl scale deploy web --replicas=5", "kubectl delete pod <name>", "kubectl get deploy,rs,pods -o wide", "kubectl get --raw /healthz", "etcdctl get /registry --prefix --keys-only"],
+  examples: ["kubectl apply -f web.yaml", "kubectl get deploy,rs,pods -o wide", "etcdctl get /registry --prefix --keys-only", "kubectl scale deploy web --replicas=5", "kubectl get pods -w", "kubectl get --raw /healthz"],
+  verbs: {
+    apply({ f }) {
+      if (f["-f"] !== "web.yaml") return f["-f"] === "-" ? undefined : { err: `error: the path "${f["-f"]}" does not exist. This lesson has web.yaml` };
+      if (flowing()) return busyMsg();
+      if (db.deploy) return ["deployment.apps/web unchanged"];
+      S.stopTour(); apply(); return ["deployment.apps/web created   # 201 Created: kubectl is done; the rest happens by watching"];
+    },
+    scale({ pos, f }) {
+      const t = pos.join("/").replace(/^(deployments?|deploy)(\.apps)?\//, "deploy/");
+      if (t !== "deploy/web") return { err: `Error from server (NotFound): deployments.apps "${t.split("/").pop() || ""}" not found` };
+      if (flowing()) return busyMsg();
+      if (!db.deploy) return { err: 'Error from server (NotFound): deployments.apps "web" not found   # kubectl apply -f web.yaml first' };
+      const n = +f["--replicas"];
+      if (!Number.isInteger(n) || n < 1 || n > 7) return { err: "this lesson's node has room for 1–7 web pods" };
+      S.stopTour(); scale(n); return ["deployment.apps/web scaled"];
+    },
+    delete({ pos }) {
+      let [what, name] = pos; if (what && what.includes("/")) [what, name] = what.split("/");
+      if (!/^(po|pods?)$/.test(what || "")) return { err: "This lesson models deleting a pod: kubectl delete pod <name>" };
+      if (!db.pods.length || db.pods[0].name !== name) return { err: db.pods.some((p) => p.name === name) ? `this lesson deletes the oldest pod first: kubectl delete pod ${db.pods[0].name}` : `Error from server (NotFound): pods "${name || ""}" not found` };
+      if (flowing()) return busyMsg();
+      S.stopTour(); deletePod(); return [`pod "${name}" deleted`];
+    },
+    get({ pos, f }) { if (f["--raw"]) return [f["--raw"] === "/healthz" || f["--raw"] === "/readyz" ? "ok" : `Error from server (NotFound): the server could not find the requested resource`]; return undefined; },
+  },
+  tools: {
+    etcdctl({ pos }) { if (pos[0] !== "get") return { err: "this lesson simulates etcdctl get /registry --prefix --keys-only" }; return [...keys(), `# revision ${db.rev}   ← every write bumps it`]; },
+  },
+});
+// ---- end kubectl ----
 S.setTour([
   { home: true, say: "The control plane, and one node. Every part connects only to the API server in the middle.", run: reset, hold: 5 },
   { focus: "kubectl", zoom: 2.4, say: "You run kubectl apply. kubectl sends the Deployment to the API server, and that is all it does.", run: apply, hold: 4 },

@@ -83,7 +83,8 @@ const backends = [];
 let seq = 0, replaceIn = 0, cacheLeft = 0;
 function addBackend(slot) { const [n] = BACK_SLOTS[slot]; backends.push({ id: ++seq, slot, node: n, ip: NODES[n].cidr + "." + nextIp[n]++, ready: false, t: 0, gone: false, fade: 1 }); }
 [0, 1, 2].forEach((s) => { addBackend(s); Object.assign(backends[backends.length - 1], { ready: true, t: 9 }); });
-const endpoints = () => backends.filter((b) => b.ready && !b.gone);
+let svcSel = "backend"; // the Service selector app=…; a typo leaves it with no endpoints
+const endpoints = () => (svcSel === "backend" ? backends.filter((b) => b.ready && !b.gone) : []);
 const freeSlot = () => [0, 1, 2, 3].find((s) => !backends.some((b) => b.slot === s));
 const changed = () => proxies.forEach((p) => (p.syncT = 1));
 function reconcile(dt) {
@@ -190,6 +191,46 @@ BACK_SLOTS.forEach(([n], i) => Object.assign(S.PARTS["b-" + i], {
   facts: () => { const b = backends.find((x) => x.slot === i && !x.gone); return b ? [["Pod IP", b.ip], ["Node", NODES[n].name], ["In endpoints", b.ready ? "yes" : "not yet"]] : []; },
 }));
 
+// ---- kubectl and the YAML editor ----
+// the Service is editable: type and selector
+const svcFields = {
+  "spec.type": { check: (v) => (["ClusterIP", "NodePort", "LoadBalancer"].includes(v) ? "" : 'supported values: "ClusterIP", "NodePort", "LoadBalancer"'), set: (v) => { svc.type = v; } },
+  "spec.selector.app": { optional: true, check: () => "", set: (v) => { svcSel = v === undefined ? "" : String(v); changed(); } },
+};
+const svcYBase = svcY;
+const svcManifest = () => svcYBase().replace(/(selector:[^\n]*\n\s+app: )backend/, `$1${svcSel || '""'}`) + (svcSel !== "backend" ? `\n# ← no pod is labelled app=${svcSel || "(empty)"}, so the Service has no endpoints` : "");
+Object.assign(S.PARTS.ledger, { manifest: svcManifest, fields: svcFields });
+Object.assign(S.PARTS.lb, { manifest: svcManifest, fields: svcFields });
+// the Deployment behind the backend pods (not drawn as its own part)
+S.part("deploy", { kind: "Deployment", title: "deployment/backend", listed: false, noFrame: true, anchor: V(0, 30, 0), desc: "Keeps the backend pods running; the Service finds them by their label app=backend.",
+  manifest: () => { const n = endpoints().length, live = backends.filter((b) => !b.gone).length; return K.deployment({ name: "backend", replicas: svc.replicas, image: "backend:1.0", ready: backends.filter((b) => b.ready && !b.gone).length, updated: live, available: backends.filter((b) => b.ready && !b.gone).length }); },
+  fields: { "spec.replicas": { check: (v) => (!Number.isInteger(v) ? "must be a whole number" : v < 0 ? "must be greater than or equal to 0" : v > 4 ? "this lesson has room for 0–4 backend pods" : ""), set: (v) => { svc.replicas = v; } } } });
+// events as pods come and go
+const addBackend0 = addBackend;
+addBackend = (slot) => { addBackend0(slot); const b = backends[backends.length - 1]; S.event("Normal", "SuccessfulCreate", "replicaset/backend-7c4d", `Created pod: backend-${b.id}`, "replicaset-controller"); S.event("Normal", "Scheduled", "pod/backend-" + b.id, `Successfully assigned default/backend-${b.id} to ${NODES[b.node].name}`, "default-scheduler"); };
+S.kube({
+  ns: "default",
+  help: ["kubectl get svc,endpointslices,pods -o wide", "kubectl edit svc backend   (type, selector)", "kubectl scale deploy/backend --replicas=0..4", "kubectl delete pod backend-<n>", "kubectl describe svc backend"],
+  examples: ["kubectl get svc,endpointslices", "kubectl get pods -o wide -l app=backend", "kubectl scale deploy/backend --replicas=4", "kubectl delete pod backend-1", "kubectl edit svc backend", "kubectl get endpointslices -w", "kubectl describe svc backend", "kubectl get events"],
+  objects: () => {
+    const eps = endpoints();
+    return [
+      { kind: "Deployment", name: "backend", part: "deploy", old: true, labels: { app: "backend" }, row: { READY: `${eps.length}/${svc.replicas}`, "UP-TO-DATE": backends.filter((b) => !b.gone).length, AVAILABLE: backends.filter((b) => b.ready && !b.gone).length } },
+      { kind: "Service", name: "backend", part: "ledger", old: true, labels: {}, row: { TYPE: svc.type, "CLUSTER-IP": "10.96.0.20", "EXTERNAL-IP": svc.type === "LoadBalancer" ? "203.0.113.7" : "<none>", "PORT(S)": svc.type === "ClusterIP" ? "80/TCP" : "80:30080/TCP" }, wide: { SELECTOR: svcSel ? "app=" + svcSel : "<none>" }, describe: () => [["Type:", svc.type], ["IP:", "10.96.0.20"], ["Selector:", svcSel ? "app=" + svcSel : "<none>"], ["Port:", "<unset>  80/TCP"], ["TargetPort:", "8080/TCP"], ...(svc.type !== "ClusterIP" ? [["NodePort:", "<unset>  30080/TCP"]] : []), ...(svc.type === "LoadBalancer" ? [["LoadBalancer Ingress:", "203.0.113.7"]] : []), ["Endpoints:", eps.map((b) => b.ip + ":8080").join(",") || "<none>"]] },
+      { kind: "Endpoints", name: "backend", part: "cluster", old: true, row: { ENDPOINTS: eps.map((b) => b.ip + ":8080").join(",") || "<none>" } },
+      ...backends.filter((b) => !b.gone).map((b) => ({ kind: "Pod", name: "backend-" + b.id, part: "b-" + b.slot, old: b.id <= 3, labels: { app: "backend", "pod-template-hash": "7c4d" }, row: { READY: b.ready ? "1/1" : "0/1", STATUS: b.ready ? "Running" : "ContainerCreating", RESTARTS: 0 }, wide: { IP: b.ip, NODE: NODES[b.node].name }, logs: () => ["backend 1.0 listening on :8080", "GET /items 200 4ms", "GET /items 200 3ms"] })),
+    ];
+  },
+  verbs: {
+    delete({ pos }) {
+      let [what, ...names] = pos; if (what && what.includes("/")) { names = pos.map((x) => x.split("/")[1]); what = pos[0].split("/")[0]; }
+      if (!/^(po|pods?)$/.test(what || "")) return { err: what ? `This lesson keeps ${what} ${names[0] || ""} so there's something to watch; delete a backend pod instead.` : "error: You must provide one or more resources by argument or filename." };
+      S.stopTour();
+      return { lines: names.map((n) => { const b = backends.find((x) => "backend-" + x.id === n && !x.gone); if (!b) return n === "frontend" ? "This lesson keeps the frontend pod: it's the client." : `Error from server (NotFound): pods "${n}" not found`; b.gone = true; b.ready = false; changed(); S.event("Normal", "Killing", "pod/" + n, "Stopping container backend"); return `pod "${n}" deleted`; }) };
+    },
+  },
+});
+// ---- end kubectl ----
 S.setTour([
   { home: true, say: "Two nodes, each giving its pods IPs from its own range. The frontend pod wants to call the backend.", hold: 5 },
   { focus: "frontend", zoom: 3, say: "It doesn't know any pod IPs. It asks cluster DNS for 'backend' (the ringed dots)...", hold: 6 },

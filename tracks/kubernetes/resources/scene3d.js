@@ -156,6 +156,57 @@ podObjs.forEach((o, i) => Object.assign(S.PARTS[o.id], {
 Object.assign(S.PARTS.node, { manifest: () => K.node({ name: "node-1", cpu: "4", mem: "8Gi", allocated: `cpu ${requested("cpu").toFixed(1)} (${Math.round(requested("cpu") * 25)}%), memory ${requested("mem")}Gi (${Math.round(requested("mem") * 12.5)}%)` }), facts: () => [["Requested CPU", `${requested("cpu").toFixed(1)} / 4`], ["Requested memory", `${requested("mem")} / 8 GiB`], ["Used memory", `${used("mem").toFixed(1)} GiB`]] });
 Object.assign(S.PARTS.kubelet, { manifest: K.kubeletConfig(), facts: () => [["Memory pressure", press > 0 ? "yes: evicting" : "no"], ["Eviction order", "BestEffort → Burstable over request → Guaranteed"]], kubectl: "kubectl top node node-1\nkubectl describe node node-1   # Conditions: MemoryPressure" });
 
+// ---- kubectl and the YAML editor ----
+// quantities: "500m" → 0.5 CPU, "512Mi" → 0.5 GiB
+const cpuOf = (v) => (v === undefined || v === "" ? 0 : /^\d+(\.\d+)?m$/.test(String(v)) ? parseFloat(v) / 1000 : /^\d+(\.\d+)?$/.test(String(v)) ? +v : NaN);
+const memOf = (v) => { if (v === undefined || v === "") return 0; const m = String(v).match(/^(\d+(?:\.\d+)?)(Gi|Mi|G|M)?$/); if (!m) return NaN; const n = +m[1]; return m[2] === "Mi" || m[2] === "M" ? n / 1024 : m[2] ? n : n / 2 ** 30; };
+const qty = (v, mem) => (!v ? '""' : mem ? (v >= 1 ? v + "Gi" : Math.round(v * 1024) + "Mi") : v < 1 ? Math.round(v * 1000) + "m" : String(v));
+const RES = ["requests.cpu", "requests.memory", "limits.cpu", "limits.memory"];
+// each pod belongs to a Deployment; changing its resources replaces the pod
+const BASE = ["web", "api", "batch"];
+BASE.forEach((name) => {
+  const P = () => pods.find((p) => p.name === name);
+  S.part("deploy-" + name, { kind: "Deployment", title: "deployment/" + name, listed: false, noFrame: true, anchor: V(0, 30, 0), desc: `Its pod template sets ${name}'s requests and limits. Changing them replaces the pod.`,
+    manifest: () => { const p = P(); if (!p) return ""; const run = p.state === "running" ? 1 : 0; return K.deployment({ name, replicas: 1, image: name + ":1.0", ready: run, available: run }).replace("        ports: [{ containerPort: 8080 }]", `        ports: [{ containerPort: 8080 }]\n        resources:   # ← QoS class ${p.qos}\n          requests: { cpu: ${qty(p.req.cpu)}, memory: ${qty(p.req.mem, 1)} }   # ← what the scheduler reserves\n          limits:   { cpu: ${qty(p.lim.cpu)}, memory: ${qty(p.lim.mem, 1)} }   # ← CPU over: throttled · memory over: OOMKilled`); },
+    applied: (all) => {
+      const p = P(); if (!p) return;
+      const get = (k) => all["spec.template.spec.containers[0].resources." + k];
+      p.req = { cpu: cpuOf(get("requests.cpu")), mem: memOf(get("requests.memory")) }; p.lim = { cpu: cpuOf(get("limits.cpu")), mem: memOf(get("limits.memory")) };
+      // a limit with no request: Kubernetes copies the limit into the request
+      if (p.lim.cpu && !p.req.cpu) p.req.cpu = p.lim.cpu; if (p.lim.mem && !p.req.mem) p.req.mem = p.lim.mem;
+      p.qos = qosOf(p); Object.assign(p, { state: "gone", leak: 0, burstUntil: 0, restarts: 0 });
+      S.event("Normal", "ScalingReplicaSet", "deployment/" + name, `Scaled up replica set ${name}-${(Math.random() * 1e4 | 0).toString(16)} to 1 (new requests/limits)`, "deployment-controller");
+      msg = `deployment/${name} changed: its pod is replaced with requests ${qty(p.req.cpu)} CPU / ${qty(p.req.mem, 1)} and limits ${qty(p.lim.cpu) === '""' ? "none" : qty(p.lim.cpu)} / ${qty(p.lim.mem, 1) === '""' ? "none" : qty(p.lim.mem, 1)}: QoS ${p.qos}.`;
+    },
+    fields: Object.fromEntries(RES.map((k) => ["spec.template.spec.containers[0].resources." + k, { optional: true, check: (v, all) => {
+      const mem = k.endsWith("memory"), n = mem ? memOf(v) : cpuOf(v);
+      if (Number.isNaN(n)) return mem ? "quantities must match '^([0-9.]+)(Mi|Gi)?$', e.g. 512Mi or 2Gi" : "quantities must be cores or millicores, e.g. 1 or 500m";
+      if (n > (mem ? POD_MEM : POD_CPU)) return `this lesson's pods hold at most ${mem ? POD_MEM + "Gi" : POD_CPU + " CPU"}`;
+      const other = all["spec.template.spec.containers[0].resources." + (k.startsWith("requests") ? "limits" : "requests") + "." + k.split(".")[1]], o = mem ? memOf(other) : cpuOf(other);
+      if (k.startsWith("requests") && o && n > o) return `must be less than or equal to ${k.split(".")[1]} limit of ${other}`;
+      return "";
+    }, set: () => {} }])) });
+});
+const podStatus = (p) => (p.state === "running" ? "Running" : p.state === "oom" ? "OOMKilled" : p.state === "evicted" ? "Evicted" : "Pending");
+const owner = (p) => (BASE.includes(p.name) ? p.name : "cache");
+S.kube({
+  ns: "default",
+  help: ["kubectl top pod   ·   kubectl top node", "kubectl edit deploy/web | deploy/api | deploy/batch   (resources.requests / limits)", "kubectl describe node node-1   (Allocated resources)", "kubectl describe pod api   (QoS Class, Last State: OOMKilled)", "kubectl get pods -w"],
+  examples: ["kubectl top pod", "kubectl top node", "kubectl describe node node-1", "kubectl edit deploy/batch", "kubectl get pods -w", "kubectl describe pod api", "kubectl get events"],
+  objects: () => [
+    ...BASE.map((n) => { const p = pods.find((q) => q.name === n); return { kind: "Deployment", name: n, part: "deploy-" + n, old: true, labels: { app: n }, row: { READY: p && p.state === "running" ? "1/1" : "0/1", "UP-TO-DATE": 1, AVAILABLE: p && p.state === "running" ? 1 : 0 } }; }),
+    ...pods.filter((p) => p.state !== "gone").map((p, i) => ({ kind: "Pod", name: p.name, part: podObjs[pods.indexOf(p)].id, old: p.id < 3, labels: { app: owner(p) }, row: { READY: p.state === "running" ? "1/1" : "0/1", STATUS: podStatus(p), RESTARTS: p.restarts }, wide: { IP: p.slot >= 0 ? `10.244.1.${40 + pods.indexOf(p)}` : "<none>", NODE: p.slot >= 0 ? "node-1" : "<none>" },
+      describe: () => [["Status:", podStatus(p)], ...(p.state === "pending" ? [["Reason:", p.why || "waiting"]] : []), ["QoS Class:", p.qos], ["Requests:", `cpu: ${qty(p.req.cpu)}, memory: ${qty(p.req.mem, 1)}`], ["Limits:", `cpu: ${qty(p.lim.cpu)}, memory: ${qty(p.lim.mem, 1)}`], ["Restart Count:", p.restarts], ...(p.restarts ? [["Last State:", "Terminated  Reason: OOMKilled  Exit Code: 137"]] : [])] })),
+  ],
+  verbs: {
+    top({ pos }) {
+      if (/^(no|nodes?)$/.test(pos[0] || "")) return ["NAME     CPU(cores)   CPU(%)   MEMORY(bytes)   MEMORY(%)", `node-1   ${Math.round(used("cpu") * 1000)}m`.padEnd(22) + `${Math.round(used("cpu") * 25)}%`.padEnd(9) + `${Math.round(used("mem") * 1024)}Mi`.padEnd(16) + `${Math.round(used("mem") * 12.5)}%`];
+      if (!/^(po|pods?)$/.test(pos[0] || "")) return { err: 'error: unknown command "' + (pos[0] || "") + '" for "kubectl top"; use top pod or top node' };
+      return ["NAME      CPU(cores)   MEMORY(bytes)", ...running().map((p) => `${p.name.padEnd(10)}${(Math.round(p.use.cpu * 1000) + "m").padEnd(13)}${Math.round(p.use.mem * 1024)}Mi${p.throttled ? "   # ← throttled at its limit" : ""}`)];
+    },
+  },
+});
+// ---- end kubectl ----
 S.setTour([
   { home: true, say: "One node with 4 CPU and 8 GiB to give, three pods running. Each pod carries a CPU meter and a memory meter.", hold: 6 },
   { focus: "pod-0", zoom: 3, say: "On a meter, the blue tick is the request (what the scheduler reserves), the bright cap the limit, the fill current use.", hold: 7 },

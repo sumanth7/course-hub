@@ -22,7 +22,7 @@ export function createStage({ home = { target: [0, 30, 0], dir: [1, 0.95, 1.05],
   const readout = document.getElementById("readout");
   const hint = document.getElementById("hint");
   const S = { viewer, panel, PARTS: {}, ticks: [], themeHooks: [], tourSteps: [] };
-  window.__S = S; // for tests: inspect every part's manifest
+  window.__S = S; window.__YAML = YAML; // for tests: inspect every part's manifest
 
   // ---------- renderer ----------
   let renderer;
@@ -544,7 +544,7 @@ export function createStage({ home = { target: [0, 30, 0], dir: [1, 0.95, 1.05],
     if (st) { const s = `Rendering at ${S.fps || "…"} fps on this device · ${renderer.info.render.calls} draw calls · ${renderer.info.render.triangles} triangles`; if (st.textContent !== s) st.textContent = s; }
     requestAnimationFrame(loop);
   }
-  S.start = () => { applyTheme(); S.renderPanel(); if (S.tourSteps.length) renderBar(); start(); };
+  S.start = () => { if (!S.kubeReady()) S.kube(); applyTheme(); S.renderPanel(); if (S.tourSteps.length) renderBar(); start(); };
   KUBE.install(S);
   return S;
 }

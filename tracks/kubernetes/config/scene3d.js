@@ -131,6 +131,36 @@ Object.assign(S.PARTS.files, { manifest: () => `# inside the container: $ ls /et
 Object.assign(S.PARTS.kubelet, { manifest: K.kubeletConfig() });
 Object.assign(S.PARTS.node, { manifest: () => K.node({ name: "node-1" }) });
 
+// ---- kubectl and the YAML editor ----
+// the ConfigMap and the Secret are editable; the pod can be restarted
+function setKey(k, v) { if (api[k] === v) return; api[k] = v; cmFlash = 1; if (!isFinite(syncIn)) syncIn = SYNC_DELAY; msg = `Edited configmap/app: ${k}=${v}. The mounted file follows on the kubelet's next sync; the env var will not change until the container restarts.`; }
+const anyStr = (v) => (typeof v === "object" ? "must be a string" : "");
+Object.assign(S.PARTS.configmap, { fields: { "data.LOG_LEVEL": { check: anyStr, set: (v) => setKey("LOG_LEVEL", String(v)) }, "data.FEATURE_X": { check: anyStr, set: (v) => setKey("FEATURE_X", String(v)) } } });
+const b64 = (v) => { try { return /^[A-Za-z0-9+/]*={0,2}$/.test(String(v)) && String(v).length % 4 === 0 ? atob(String(v)) : null; } catch (e) { return null; } };
+Object.assign(S.PARTS.secret, { fields: { "data.password": { check: (v) => (b64(v) === null ? `illegal base64 data at input byte ${String(v).search(/[^A-Za-z0-9+/=]/) >= 0 ? String(v).search(/[^A-Za-z0-9+/=]/) : Math.floor(String(v).length / 4) * 4}   # Secret data must be base64: echo -n 'hunter3' | base64` : ""), set: (v) => { api.DB_PASSWORD = b64(v); msg = "Edited secret/db. The env var DB_PASSWORD keeps the old value until the container restarts."; } } } });
+const restartPod = () => { restart(); S.event("Normal", "Killing", "pod/app", "Stopping container app"); setTimeout(() => S.event("Normal", "Started", "pod/app", "Started container app"), 1600); };
+S.kube({
+  ns: "default",
+  help: ["kubectl edit configmap app      (LOG_LEVEL, FEATURE_X)", "kubectl edit secret db           (data.password, base64)", "kubectl exec app -- env   ·   kubectl exec app -- cat /etc/config/LOG_LEVEL", "kubectl rollout restart deploy/app   ·   kubectl delete pod app", "kubectl get secret db -o yaml"],
+  examples: ["kubectl get configmap app -o yaml", "kubectl edit configmap app", "kubectl exec app -- env", "kubectl exec app -- cat /etc/config/LOG_LEVEL", "kubectl rollout restart deploy/app", "kubectl get secret db -o yaml", "kubectl edit secret db"],
+  objects: () => [{ kind: "Deployment", name: "app", part: "pod", old: true, labels: { app: "app" }, row: { READY: restarting ? "0/1" : "1/1", "UP-TO-DATE": 1, AVAILABLE: restarting ? 0 : 1 }, manifest: () => K.deployment({ name: "app", replicas: 1, image: "app:2.3" }) },
+    { kind: "Pod", name: "app", part: "pod", old: true, labels: { app: "app" }, row: { READY: restarting ? "0/1" : "1/1", STATUS: restarting ? "Terminating" : "Running", RESTARTS: 0 }, wide: { IP: "10.244.1.30", NODE: "node-1" }, logs: () => [`app 2.3 starting with LOG_LEVEL=${env.LOG_LEVEL} FEATURE_X=${env.FEATURE_X}`, ...(env.LOG_LEVEL === "debug" ? ["DEBUG config loaded from env", "DEBUG connecting to db as app"] : []), "listening on :8080"] }],
+  verbs: {
+    exec({ pos }) {
+      const [pod, ...cmd] = pos, line = cmd.join(" ");
+      if (pod !== "app") return { err: `Error from server (NotFound): pods "${pod || ""}" not found` };
+      if (!line) return { err: "error: you must specify at least one command for the container" };
+      if (line === "env" || line.startsWith("printenv")) return [`LOG_LEVEL=${env.LOG_LEVEL}`, `FEATURE_X=${env.FEATURE_X}`, `DB_PASSWORD=${env.DB_PASSWORD}`, "HOSTNAME=app", "KUBERNETES_SERVICE_HOST=10.96.0.1"];
+      const m = line.match(/^cat \/etc\/config\/(\w+)$/);
+      if (m) return files[m[1]] !== undefined ? [files[m[1]]] : { err: `cat: /etc/config/${m[1]}: No such file or directory\ncommand terminated with exit code 1` };
+      if (/^ls( \/etc\/config\/?)?$/.test(line)) return ["FEATURE_X", "LOG_LEVEL"];
+      return { err: `${cmd[0]}: this simulated container only runs env, ls /etc/config and cat /etc/config/<KEY>` };
+    },
+    rollout({ pos }) { if (pos[0] !== "restart") return { err: "This lesson models kubectl rollout restart deploy/app" }; S.stopTour(); restartPod(); return "deployment.apps/app restarted"; },
+    delete({ pos }) { const n = pos[0] && pos[0].includes("/") ? pos[0].split("/")[1] : pos[1]; if (n !== "app") return { err: "This lesson models deleting the pod: kubectl delete pod app" }; S.stopTour(); restartPod(); return ['pod "app" deleted', "# its Deployment starts a new one, which reads the env vars fresh"]; },
+  },
+});
+// ---- end kubectl ----
 S.setTour([
   { home: true, say: "Two API objects on the left, and a pod with its lid off on the right, so we can see where their values end up.", hold: 6 },
   { focus: "configmap", zoom: 3, say: "Edit the ConfigMap: LOG_LEVEL becomes debug. The API has the new value immediately.", run: () => { if (api.LOG_LEVEL === "info") edit("LOG_LEVEL"); }, hold: 5 },

@@ -157,6 +157,32 @@ pods.forEach((p, i) => {
 Object.assign(S.PARTS.service, { manifest: () => K.service({ name: "web", endpoints: pods.filter((p) => p.ready).map((p) => ipOf(p.i) + ":8080") }), facts: () => [["Endpoints", pods.filter((p) => p.ready).map((p) => NAMES[p.i]).join(", ") || "none"]] });
 Object.assign(S.PARTS.bench, { manifest: K.kubeletConfig(), facts: () => [["Pods", 3], ["Restarts so far", pods.reduce((a, p) => a + p.restarts, 0)]] });
 
+// ---- kubectl and the YAML editor ----
+// probe failures and restarts become events
+const PROBE = ["Startup", "Liveness", "Readiness"];
+const probe0 = probe, kill0 = kill;
+probe = (p, n, pass) => { probe0(p, n, pass); if (!pass) S.event("Warning", "Unhealthy", "pod/" + NAMES[p.i], `${PROBE[n]} probe failed: ${!p.appUp ? 'Get "http://10.244.1.' + (20 + p.i) + ':8080/healthz": dial tcp 10.244.1.' + (20 + p.i) + ':8080: connect: connection refused' : p.hung ? 'Get "http://10.244.1.' + (20 + p.i) + ':8080/' + (n === 2 ? "ready" : "healthz") + '": context deadline exceeded' : "HTTP probe failed with statuscode: 503"}`); };
+kill = (p) => { S.event("Normal", "Killing", "pod/" + NAMES[p.i], `Container web failed ${spec.startup && !p.started ? "startup" : "liveness"} probe, will be restarted`); kill0(p); };
+// the Deployment carries the probes; removing startupProbe from it changes every pod
+const PROBES_Y = () => (spec.startup ? `        startupProbe:   { httpGet: { path: /healthz, port: 8080 }, periodSeconds: 10, failureThreshold: 10 }   # ← up to 100 s to start; the others wait\n` : "") +
+  `        livenessProbe:  { httpGet: { path: /healthz, port: 8080 }, periodSeconds: 10, failureThreshold: 3 }   # ← fail 3× → restart\n        readinessProbe: { httpGet: { path: /ready, port: 8080 }, periodSeconds: 10, failureThreshold: 3 }   # ← fail → out of the Service`;
+S.part("deploy", { kind: "Deployment", title: "deployment/web", listed: false, noFrame: true, anchor: V(0, 30, 0), desc: "Its pod template holds the three probes. Edit it to remove or restore the startupProbe.",
+  manifest: () => { const r = pods.filter((p) => p.ready).length; return K.deployment({ name: "web", replicas: 3, image: "web:1.4.2", ready: r, available: r }).replace("        ports: [{ containerPort: 8080 }]", "        ports: [{ containerPort: 8080 }]\n" + PROBES_Y()); },
+  fields: { "spec.template.spec.containers[0].startupProbe.*": { optional: true, check: () => "", set: (v, all) => { spec.startup = Object.keys(all).some((k) => k.includes(".startupProbe.")); } }, "spec.template.spec.containers[0].livenessProbe.*": { optional: true, check: () => "this lesson keeps the liveness probe as is; try removing the startupProbe", set: () => {} }, "spec.template.spec.containers[0].readinessProbe.*": { optional: true, check: () => "this lesson keeps the readiness probe as is; try removing the startupProbe", set: () => {} } } });
+const podRow = (p) => ({ READY: p.ready ? "1/1" : "0/1", STATUS: p.phase === "killed" ? "Error" : p.phase === "backoff" ? (p.backoff ? "CrashLoopBackOff" : "Running") : "Running", RESTARTS: p.restarts });
+S.kube({
+  ns: "default",
+  help: ["kubectl get pods -w        (watch READY and RESTARTS while you break a pod)", "kubectl describe pod web-1  (probe failures under Events)", "kubectl get events", "kubectl edit deploy/web     (remove the startupProbe, then restart web-3 slowly)", "kubectl get endpoints web"],
+  examples: ["kubectl get pods -w", "kubectl describe pod web-1", "kubectl get endpoints web", "kubectl get events", "kubectl edit deploy/web", "kubectl logs web-1"],
+  objects: () => [
+    { kind: "Deployment", name: "web", part: "deploy", old: true, labels: { app: "web" }, row: { READY: `${pods.filter((p) => p.ready).length}/3`, "UP-TO-DATE": 3, AVAILABLE: pods.filter((p) => p.ready).length } },
+    { kind: "Endpoints", name: "web", part: "service", old: true, row: { ENDPOINTS: pods.filter((p) => p.ready).map((p) => ipOf(p.i) + ":8080").join(",") || "<none>" } },
+    ...pods.map((p, i) => ({ kind: "Pod", name: NAMES[i], part: "pod-" + i, old: true, labels: { app: "web" }, row: podRow(p), wide: { IP: ipOf(i), NODE: "node-1" },
+      logs: () => p.phase !== "running" ? [`Error from server (BadRequest): container "web" in pod "${NAMES[i]}" is waiting to start: ${podRow(p).STATUS}`] : !p.appUp ? ["web 1.4.2 starting", "loading caches..."] : p.hung ? ["web 1.4.2 listening on :8080", "GET /healthz 200 1ms", "(no output: the process is stuck)"] : now < p.busyUntil ? ["GET / 200 2400ms", "GET /ready 503 slow: 48 requests queued", "GET / 200 2210ms"] : ["web 1.4.2 listening on :8080", "GET /healthz 200 1ms", "GET /ready 200 1ms", "GET / 200 4ms"],
+      describe: () => [["Node:", "node-1/10.0.1.10"], ["Status:", "Running"], ["IP:", ipOf(i)], ["Controlled By:", "ReplicaSet/web-5d8c"], ["Containers:"], ["  web:"], ["    Image:", "web:1.4.2"], ["    State:", stateLabel(p)], ["    Ready:", p.ready ? "True" : "False"], ["    Restart Count:", p.restarts], ["    Liveness:", "http-get http://:8080/healthz delay=0s timeout=1s period=10s #success=1 #failure=3"], ["    Readiness:", "http-get http://:8080/ready delay=0s timeout=1s period=10s #success=1 #failure=3"], ...(spec.startup ? [["    Startup:", "http-get http://:8080/healthz delay=0s timeout=1s period=10s #success=1 #failure=10"]] : [])] })),
+  ],
+});
+// ---- end kubectl ----
 S.setTour([
   { home: true, say: "Three pods on one node. Above each, the kubelet's probes tap it once per period: Startup, Liveness, Readiness.", hold: 6 },
   { focus: "probes-1", zoom: 3, say: "Each tap lights a result lamp. Failures are counted on the tower; three in a row is the default threshold.", hold: 6 },

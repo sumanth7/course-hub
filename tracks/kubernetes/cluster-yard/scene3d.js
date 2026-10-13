@@ -270,6 +270,26 @@ pods.forEach((p, i) => Object.assign(S.PARTS[p.id], {
   facts: () => (state.slot[i] > 0 ? [["Node", `node-${SLOTS[i].node + 1}`], ["Pod IP", ipOf(i)], ["Ready", state.ready[i] > 1 ? "yes" : "starting"], ["Owner", "ReplicaSet web-6b7f"]] : []),
 }));
 
+// ---- kubectl and the YAML editor ----
+// replicas are editable; pods can be deleted; nodes drained and brought back
+Object.assign(S.PARTS.control, { fields: { "spec.replicas": { check: (v) => (!Number.isInteger(v) ? "must be a whole number" : v < 0 ? "must be greater than or equal to 0" : v > 12 ? "this yard has 12 pod slots" : ""), set: (v) => setDesired(v) } } });
+S.kube({
+  ns: "default",
+  help: ["kubectl get nodes,pods -o wide", "kubectl scale deploy/web --replicas=0..12   ·   kubectl edit deploy/web", "kubectl delete pod <name>   (the Deployment replaces it)", "kubectl drain node-2   (take a node out: its pods move)   ·   kubectl uncordon node-2"],
+  examples: ["kubectl get nodes", "kubectl get pods -o wide", "kubectl scale deploy/web --replicas=9", "kubectl drain node-2 --ignore-daemonsets", "kubectl get pods -o wide -w", "kubectl uncordon node-2", "kubectl get endpointslices"],
+  verbs: {
+    delete({ pos }) {
+      let [what, ...names] = pos; if (what && what.includes("/")) { names = pos.map((x) => x.split("/")[1]); what = pos[0].split("/")[0]; }
+      if (!/^(po|pods?)$/.test(what || "")) return { err: `This lesson keeps ${what || "it"}; delete a pod to watch the Deployment replace it` };
+      S.stopTour();
+      return { lines: names.map((n) => { const i = state.names.findIndex((x, k) => x === n && state.slot[k] > 0); if (i < 0) return `Error from server (NotFound): pods "${n}" not found`; state.slot[i] = 0; S.event("Normal", "Killing", "pod/" + n, "Stopping container web"); return `pod "${n}" deleted`; }) };
+    },
+    drain({ pos }) { const n = ["node-1", "node-2", "node-3"].indexOf(pos[0]); if (n < 0) return { err: `Error from server (NotFound): nodes "${pos[0] || ""}" not found` }; if (!state.up[n]) return [`node/${pos[0]} already cordoned`]; S.stopTour(); const names = state.names.filter((x, i) => state.slot[i] > 0 && SLOTS[i].node === n); setNode(n, false); return [`node/${pos[0]} cordoned`, ...names.map((x) => `evicting pod default/${x}`), ...names.map((x) => `pod/${x} evicted`), `node/${pos[0]} drained`]; },
+    cordon({ pos }) { return { err: `cordon only stops new pods; this lesson models the full drain: kubectl drain ${pos[0] || "node-2"}` }; },
+    uncordon({ pos }) { const n = ["node-1", "node-2", "node-3"].indexOf(pos[0]); if (n < 0) return { err: `Error from server (NotFound): nodes "${pos[0] || ""}" not found` }; if (state.up[n]) return [`node/${pos[0]} already uncordoned`]; S.stopTour(); setNode(n, true); return [`node/${pos[0]} uncordoned`]; },
+  },
+});
+// ---- end kubectl ----
 S.setTour([
   { home: true, say: "This yard is a Kubernetes cluster. Watch the crane: it keeps the number of running pods equal to what you asked for.", hold: 6, run: () => setDesired(6) },
   { focus: "control", zoom: 2.4, say: "The control plane stores the desired state: 6 replicas of the web app. The knob is that number.", hold: 6 },

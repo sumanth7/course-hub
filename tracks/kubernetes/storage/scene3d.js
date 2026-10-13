@@ -166,6 +166,44 @@ Object.assign(S.PARTS.fs, { manifest: () => `# inside the container: the writabl
 Object.assign(S.PARTS.empty, { manifest: () => `volumes:\n- name: scratch\n  emptyDir: {}   # ← created with the pod, deleted with the pod\n# $ ls /scratch | wc -l  →  ${data.empty}` });
 Object.assign(S.PARTS.rack, { manifest: () => pvs.length ? pvs.map((v) => K.pv({ name: pvName(v.id), claim: v.state === "Bound" ? "data" : "", reclaim: policy, phase: v.state })).join("\n---\n") : "# no PersistentVolumes", kubectl: "kubectl get pv" });
 
+// ---- kubectl and the YAML editor ----
+// the reclaim policy lives on each PV (editable); on the StorageClass it is fixed once created
+const polField = { "spec.persistentVolumeReclaimPolicy": { check: (v) => (["Delete", "Retain"].includes(v) ? "" : 'supported values: "Delete", "Retain"'), set: (v) => { if (policy !== v) setPolicy(); } } };
+lockers.forEach((L) => Object.assign(S.PARTS[L.id], { fields: polField }));
+Object.assign(S.PARTS.press, { fields: {}, immutable: ["reclaimPolicy", "provisioner", "parameters", "volumeBindingMode"] });
+const recs = (n, dir) => Array.from({ length: n }, (_, i) => `${dir}/record-${i + 1}`);
+S.kube({
+  ns: "default",
+  help: ["kubectl exec <pod> -- /app/write       (write one record to all three places)", "kubectl exec <pod> -- ls /var/app/records | /scratch | /data", "kubectl exec <pod> -- kill 1            (crash the container: it restarts)", "kubectl delete pod <pod>", "kubectl delete pvc data   ·   kubectl apply -f data-pvc.yaml", "kubectl patch pv <pv> -p '{\"spec\":{\"persistentVolumeReclaimPolicy\":\"Retain\"}}'", "kubectl get pvc,pv"],
+  examples: ["kubectl get pvc,pv", "kubectl exec deploy/app -- /app/write", "kubectl exec deploy/app -- ls /data", "kubectl exec deploy/app -- kill 1", "kubectl delete pod -l app=app", "kubectl delete pvc data", "kubectl apply -f data-pvc.yaml", "kubectl get pv -w"],
+  objects: () => [{ kind: "Deployment", name: "app", part: "pod", old: true, labels: { app: "app" }, row: { READY: podGone || restartT ? "0/1" : "1/1", "UP-TO-DATE": 1, AVAILABLE: podGone || restartT ? 0 : 1 }, manifest: () => K.deployment({ name: "app", replicas: 1, image: "app:1.0" }) }],
+  verbs: {
+    exec({ pos }) {
+      const [who, ...cmd] = pos, line = cmd.join(" ");
+      if (who !== podName && who !== "deploy/app" && who !== "deployment/app") return { err: `Error from server (NotFound): pods "${who || ""}" not found   # the pod is ${podName}, or use deploy/app` };
+      if (podGone) return { err: `error: unable to upgrade connection: pod ${podName} is terminating` };
+      if (line === "/app/write") { S.stopTour(); write(); return ["wrote 1 record to /var/app/records, /scratch and /data"]; }
+      if (line === "kill 1") { S.stopTour(); restartContainer(); S.event("Warning", "BackOff", "pod/" + podName, "Back-off restarting failed container app"); return ["command terminated with exit code 137"]; }
+      const m = line.match(/^ls (\/var\/app\/records|\/scratch|\/data)\/?$/);
+      if (m) { const v = boundPv(); const n = m[1] === "/data" ? (v && v.state === "Bound" ? v.data : 0) : m[1] === "/scratch" ? data.empty : data.fs; return n ? recs(n, m[1]).map((x) => x.split("/").pop()) : ["(empty)"]; }
+      return { err: "this simulated container runs: /app/write, ls /var/app/records, ls /scratch, ls /data, kill 1" };
+    },
+    delete({ pos, f }) {
+      let [what, name] = pos; if (what && what.includes("/")) [what, name] = what.split("/");
+      const k = KUBE.kindOf(what || "");
+      if (k === "Pod") { if (!f["-l"] && name !== podName) return { err: `Error from server (NotFound): pods "${name || ""}" not found` }; S.stopTour(); const old = podName; deletePod(); newPod(); S.event("Normal", "Killing", "pod/" + old, "Stopping container app"); return `pod "${old}" deleted`; }
+      if (k === "PersistentVolumeClaim") { if (name !== "data" || !pvc.exists) return { err: `Error from server (NotFound): persistentvolumeclaims "${name || ""}" not found` }; S.stopTour(); togglePvc(); return 'persistentvolumeclaim "data" deleted' + (policy === "Delete" ? "\n# reclaimPolicy Delete: its PV and the disk are deleted too" : "\n# reclaimPolicy Retain: its PV is kept as Released, data and all"); }
+      if (k === "PersistentVolume") return { err: "Delete the claim instead (kubectl delete pvc data): the reclaim policy then decides what happens to the volume." };
+      return { err: `kubectl delete ${what || ""} isn't part of this lesson` };
+    },
+    apply({ f }) {
+      if (f["-f"] !== "data-pvc.yaml") return undefined; // anything else goes to the editor
+      if (pvc.exists) return "persistentvolumeclaim/data unchanged";
+      S.stopTour(); togglePvc(); return "persistentvolumeclaim/data created";
+    },
+  },
+});
+// ---- end kubectl ----
 S.setTour([
   { home: true, say: "A pod on a node, a rack of storage lockers, and a StorageClass press that builds new ones.", hold: 5 },
   { focus: "pod", zoom: 2, say: "The app writes three records, each into three places: its container's filesystem, an emptyDir, and a PersistentVolume.", run: () => { write(); setTimeout(write, 600); setTimeout(write, 1200); }, hold: 6 },

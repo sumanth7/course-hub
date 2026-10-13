@@ -79,7 +79,7 @@ S.onTick((dt) => {
   net.step(dt);
   pods.forEach((p) => { p.ok = Math.max(0, p.ok - dt * 2); p.bad = Math.max(0, p.bad - dt * 1.2); p.door.set(p.bad > 0 ? "bad" : p.ok > 0 ? "on" : "off"); p.fence.visible = mode !== "off"; });
   ruleLamps.forEach((l, n) => { ruleT[n] = Math.max(0, ruleT[n] - dt * 2); l.set(ruleT[n] > 0 ? (n === 3 ? "bad" : "on") : "off"); });
-  npLamps.forEach((l, n) => l.set(mode === "off" ? "off" : mode === "deny" ? (n === 0 ? "on" : "off") : "on"));
+  npLamps.forEach((l, n) => l.set(npOn(n) ? "on" : "off"));
   S.say("policy: " + (mode === "off" ? "none" : mode === "deny" ? "deny all" : "allow-list"));
   syncUi();
 });
@@ -101,6 +101,55 @@ const npY = () => mode === "off" ? "# no NetworkPolicy objects in namespace shop
 Object.assign(S.PARTS.policy, { manifest: npY, facts: () => [["Mode", { off: "no policies", deny: "default deny", allow: "deny + allow rules" }[mode]]], kubectl: "kubectl get networkpolicy -n shop\nkubectl describe networkpolicy db-from-api -n shop" });
 PODS.forEach((p, i) => Object.assign(S.PARTS["pod-" + i], { manifest: () => K.pod({ name: p.id, ns: "shop", labels: { app: p.svc, ...(p.svc !== "db" ? { tier: "front" } : {}) }, node: "node-1", ip: `10.244.1.${70 + i}` }), facts: () => [["Labels", `app=${p.svc}`], ["Accepts from", mode === "off" ? "anyone" : [...ALLOW].filter((e) => e.endsWith(">" + p.svc)).map((e) => e.split(">")[0]).join(", ") || "nobody"]] }));
 
+// ---- kubectl and the YAML editor ----
+// NetworkPolicies one by one: default-deny plus three allow rules
+const NPS = { "allow-from-ingress": ["ingress>web", "ingress>api", "ingress>admin"], "api-from-web": ["web>api"], "db-from-api": ["api>db"] };
+const pol = { deny: false, rules: new Set() };
+let lastMode = mode;
+const fromMode = () => { pol.deny = mode !== "off"; pol.rules = new Set(mode === "allow" ? Object.keys(NPS) : []); };
+const sync = () => { ALLOW.clear(); for (const r of pol.rules) NPS[r].forEach((e) => ALLOW.add(e)); mode = !pol.deny ? "off" : pol.rules.size ? "allow" : "deny"; lastMode = mode; };
+const npOn = (n) => (n === 0 ? pol.deny : pol.deny && pol.rules.has(Object.keys(NPS)[n - 1]));
+S.onTick(() => { if (mode !== lastMode) { fromMode(); sync(); } }); // buttons and the tour set the mode directly
+const npDoc = (name) => name === "default-deny" ? K.networkpolicy({ name, podSelector: {}, from: null }) : name === "allow-from-ingress" ? K.networkpolicy({ name, podSelector: { tier: "front" }, from: ["namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } }"] }) : name === "api-from-web" ? K.networkpolicy({ name, podSelector: { app: "api" }, from: ["podSelector: { matchLabels: { app: web } }"] }) : K.networkpolicy({ name, podSelector: { app: "db" }, from: ["podSelector: { matchLabels: { app: api } }   # ← web → db is not listed, so it is dropped"] });
+const present = () => [...(pol.deny ? ["default-deny"] : []), ...Object.keys(NPS).filter((r) => pol.deny && pol.rules.has(r)), ...Object.keys(NPS).filter((r) => !pol.deny && pol.rules.has(r))];
+S.PARTS.policy.manifest = () => (present().length ? present().map(npDoc).join("\n---\n") : "# no NetworkPolicy objects in namespace shop\n$ kubectl get networkpolicy -n shop\nNo resources found in shop namespace.");
+const FILES = { "default-deny.yaml": ["default-deny"], "allow-from-ingress.yaml": ["allow-from-ingress"], "api-from-web.yaml": ["api-from-web"], "db-from-api.yaml": ["db-from-api"], "allow-rules.yaml": Object.keys(NPS) };
+const svcOf = (name) => (PODS.find((p) => p.id === name) || {}).svc;
+S.kube({
+  ns: "shop",
+  help: ["kubectl get ingress,networkpolicy -n shop", "kubectl apply -f default-deny.yaml | allow-rules.yaml | allow-from-ingress.yaml | api-from-web.yaml | db-from-api.yaml", "kubectl delete networkpolicy <name>   ·   kubectl delete networkpolicy --all", "kubectl exec web-1 -- curl -s -m 2 http://db:5432   (is it allowed?)", "kubectl describe ingress shop"],
+  examples: ["kubectl get ingress,networkpolicy", "kubectl exec web-1 -- curl -s -m 2 http://db:5432", "kubectl apply -f default-deny.yaml", "kubectl apply -f allow-from-ingress.yaml", "kubectl apply -f api-from-web.yaml", "kubectl apply -f db-from-api.yaml", "kubectl delete networkpolicy --all", "kubectl describe ingress shop"],
+  verbs: {
+    apply({ f }) {
+      const want = FILES[f["-f"]];
+      if (!want) return f["-f"] === "-" ? undefined : { err: `error: the path "${f["-f"]}" does not exist. Files here: ${Object.keys(FILES).join(", ")}` };
+      S.stopTour();
+      const lines = want.map((n) => { const had = n === "default-deny" ? pol.deny : pol.rules.has(n); if (n === "default-deny") pol.deny = true; else pol.rules.add(n); return `networkpolicy.networking.k8s.io/${n} ${had ? "unchanged" : "created"}`; });
+      sync(); return lines;
+    },
+    delete({ pos, f }) {
+      let [what, ...names] = pos; if (what && what.includes("/")) { names = pos.map((x) => x.split("/")[1]); what = pos[0].split("/")[0]; }
+      if (KUBE.kindOf(what || "") !== "NetworkPolicy") return { err: `kubectl delete ${what || ""} isn't part of this lesson; try kubectl delete networkpolicy <name>` };
+      if (f["--all"]) names = present();
+      if (!names.length) return { err: "error: resource(s) were provided, but no name was specified" };
+      S.stopTour();
+      const lines = names.map((n) => { const has = n === "default-deny" ? pol.deny : pol.rules.has(n); if (!has) return `Error from server (NotFound): networkpolicies.networking.k8s.io "${n}" not found`; if (n === "default-deny") pol.deny = false; else pol.rules.delete(n); return `networkpolicy.networking.k8s.io "${n}" deleted`; });
+      sync(); return lines;
+    },
+    exec({ pos }) {
+      const [from, ...cmd] = pos, src = svcOf(from);
+      if (!src) return { err: `Error from server (NotFound): pods "${from || ""}" not found` };
+      const m = cmd.join(" ").match(/curl.*?https?:\/\/([a-z]+)/);
+      if (!m) return { err: "this simulated container runs curl: kubectl exec web-1 -- curl -s -m 2 http://db:5432" };
+      const to = m[1];
+      if (!PODS.some((p) => p.svc === to)) return { err: `curl: (6) Could not resolve host: ${to}\ncommand terminated with exit code 6` };
+      const ok = permitted(src, to);
+      // isolation only matters when a policy selects the target: default-deny selects them all
+      return ok ? [to === "db" ? "(db answered: connection accepted on 5432)" : `{"service":"${to}","ok":true}`] : { err: `curl: (28) Connection timed out after 2001 milliseconds\ncommand terminated with exit code 28   # no NetworkPolicy allows ${src} → ${to}` };
+    },
+  },
+});
+// ---- end kubectl ----
 S.setTour([
   { home: true, say: "Five pods. Outside requests come in on the right; pods call each other along the back.", run: () => (mode = "off"), hold: 5 },
   { focus: "ingress", zoom: 2.4, say: "The Ingress controller ends TLS (the ring comes off) and routes by host and path. An unknown host gets a 404.", hold: 7 },

@@ -135,6 +135,83 @@ SUBJ.forEach((s) => Object.assign(S.PARTS["subj-" + s.id], { manifest: () => (s.
 Object.assign(S.PARTS.gate, { manifest: () => K.apiserver() + "\n---\n" + K.namespace({ name: "dev", podSecurity: pss ? "restricted" : undefined }), facts: () => [["Pod Security on dev", pss ? "restricted (enforced)" : "not enforced"]] });
 RES.forEach((r) => Object.assign(S.PARTS["res-" + r.id], { kubectl: `kubectl get ${r.id} -n dev\nkubectl auth can-i get ${r.id} -n dev --as=alice` }));
 
+// ---- kubectl and the YAML editor ----
+// the terminal is kubernetes-admin; --as=… sends the request as alice or a ServiceAccount, through the gate
+const SA = "system:serviceaccount:dev:";
+const subjectOf = (as) => (!as ? null : as === "alice" ? "alice" : String(as).startsWith(SA) && SUBJ.some((s) => s.id === as.slice(SA.length)) ? as.slice(SA.length) : undefined);
+const RES_OF = { pods: "pods", pod: "pods", po: "pods", deployments: "deployments", deployment: "deployments", deploy: "deployments", secrets: "secrets", secret: "secrets", nodes: "nodes", node: "nodes", no: "nodes" };
+const forbidden = (sub, verb, res, ns) => `Error from server (Forbidden): ${res} is forbidden: ${sub === "alice" ? 'User "alice"' : `User "${SA}${sub}"`} cannot ${verb} resource "${res}" in API group "${res === "deployments" ? "apps" : ""}"${ns === "*" ? " at the cluster scope" : ` in the namespace "${ns}"`}`;
+// run a request as someone: animate it through the gate, answer now
+function asSubject(f, verb, res, ns, extra) {
+  const sub = subjectOf(f["--as"]);
+  if (sub === undefined) return { err: `Error from server (Forbidden): users "${f["--as"]}" is forbidden: this lesson's subjects are alice, ${SA}ci-bot and ${SA}monitor` };
+  if (!sub) return null; // the admin: allowed, no animation
+  S.stopTour(); who = sub; request(sub, verb, res, ns, extra);
+  return can(sub, verb, res, ns) ? null : { err: forbidden(sub, verb, res, ns) };
+}
+const nsOf = (f, res) => (res === "nodes" ? "*" : f["-A"] ? "*" : f["-n"] || "dev");
+S.kube({
+  ns: "dev",
+  welcome: "# You are kubernetes-admin (cluster-admin). Add --as=alice or --as=system:serviceaccount:dev:ci-bot to act as someone else: their requests go through the gate.",
+  help: ["kubectl auth can-i <verb> <resource> [-n dev] --as=<subject>   ·   kubectl auth can-i --list --as=…", "kubectl get pods|deployments|secrets|nodes --as=alice", "kubectl create rolebinding ci-bot-deployer --role=deployer --serviceaccount=dev:ci-bot", "kubectl delete rolebinding <name>", "kubectl label ns dev pod-security.kubernetes.io/enforce=restricted   (add - at the end to remove)", "kubectl apply -f debug-privileged.yaml --as=alice   (a privileged pod)"],
+  examples: ["kubectl auth can-i delete pods --as=alice", "kubectl get secrets --as=alice", "kubectl get nodes --as=system:serviceaccount:dev:monitor", "kubectl create deployment web --image=nginx --as=system:serviceaccount:dev:ci-bot", "kubectl create rolebinding ci-bot-deployer --role=deployer --serviceaccount=dev:ci-bot", "kubectl get rolebindings", "kubectl label ns dev pod-security.kubernetes.io/enforce=restricted", "kubectl apply -f debug-privileged.yaml --as=alice"],
+  verbs: {
+    auth({ pos, f }) {
+      if (pos[0] === "whoami") { const s = subjectOf(f["--as"]); return ["ATTRIBUTE   VALUE", `Username    ${s ? (s === "alice" ? "alice" : SA + s) : "kubernetes-admin"}`, `Groups      [${s === "alice" ? "dev-team" : s ? "system:serviceaccounts" : "kubeadm:cluster-admins"} system:authenticated]`]; }
+      if (pos[0] !== "can-i") return { err: "error: try kubectl auth can-i <verb> <resource> --as=<subject>" };
+      const sub = subjectOf(f["--as"]);
+      if (sub === undefined) return { err: `this lesson's subjects are alice, ${SA}ci-bot and ${SA}monitor` };
+      if (f["--list"]) { if (!sub) return ["Resources   Non-Resource URLs   Resource Names   Verbs", "*.*         []                  []               [*]"]; const rows = [...bindings[sub]].flatMap((r) => RULES[r].map((x) => [x.res + (x.res === "deployments" ? ".apps" : ""), "[]", "[]", `[${x.verbs.join(" ")}]`])); return pad([["Resources", "Non-Resource URLs", "Resource Names", "Verbs"], ...rows, ["selfsubjectreviews.authentication.k8s.io", "[]", "[]", "[create]"]]); }
+      const verb = pos[1], res = RES_OF[(pos[2] || "").split("/")[0]];
+      if (!verb || !res) return { err: "error: you must specify two arguments: verb resource (pods, deployments, secrets or nodes here)" };
+      if (!sub) return ["yes"];
+      return [can(sub, verb, res, nsOf(f, res)) ? "yes" : "no"];
+    },
+    get({ pos, f }) { const res = RES_OF[(pos[0] || "").split("/")[0]]; if (!res || !f["--as"]) return undefined; const r = asSubject(f, pos[1] ? "get" : "list", res, nsOf(f, res)); return r || undefined; },
+    delete({ pos, f }) {
+      if (/^rolebindings?$|^clusterrolebindings?$/.test(pos[0] || "")) { const n = pos[1] || ""; const role = ROLES.find((r) => n === r.id + "-binding" || n.endsWith("-" + r.id)); if (!role) return { err: `Error from server (NotFound): rolebindings.rbac.authorization.k8s.io "${n}" not found` }; S.stopTour(); SUBJ.forEach((s) => bindings[s.id].delete(role.id)); return `rolebinding.rbac.authorization.k8s.io "${n}" deleted`; }
+      const res = RES_OF[(pos[0] || "").split("/")[0]]; if (!res) return { err: `kubectl delete ${pos[0] || ""} isn't part of this lesson` };
+      const r = asSubject(f, "delete", res, nsOf(f, res)); if (r) return r;
+      return f["--as"] ? [`${res.replace(/s$/, "")} "${pos[1] || "web-6d9f"}" deleted`] : { err: "As kubernetes-admin this would really delete it. Try it --as=alice to see RBAC answer." };
+    },
+    create({ pos, f }) {
+      if (pos[0] === "deployment" || pos[0] === "deploy") { const r = asSubject(f, "create", "deployments", nsOf(f, "deployments")); if (r) return r; return [`deployment.apps/${pos[1] || "web"} created`]; }
+      if (pos[0] === "rolebinding" || pos[0] === "clusterrolebinding") {
+        const role = f["--role"] || f["--clusterrole"], R = ROLES.find((x) => x.id === role);
+        if (!R) return { err: `error: specify --role or --clusterrole: ${ROLES.map((x) => x.id).join(", ")}` };
+        const subs = [f["--user"], f["--serviceaccount"]].filter((x) => x && x !== true).map((x) => String(x).split(":").pop());
+        if (!subs.length || subs.some((x) => !bindings[x])) return { err: "error: specify --user=alice or --serviceaccount=dev:ci-bot (or dev:monitor)" };
+        if (subjectOf(f["--as"])) return { err: forbidden(subjectOf(f["--as"]), "create", "rolebindings", "dev").replace('API group ""', 'API group "rbac.authorization.k8s.io"') };
+        S.stopTour(); subs.forEach((x) => bindings[x].add(R.id));
+        return `${pos[0]}.rbac.authorization.k8s.io/${pos[1] || R.id + "-binding"} created`;
+      }
+      return undefined;
+    },
+    apply({ f }) {
+      if (f["-f"] !== "debug-privileged.yaml") return undefined;
+      if (!f["--as"]) return { err: "Run it as someone: kubectl apply -f debug-privileged.yaml --as=alice" };
+      const r = asSubject(f, "create", "deployments", "dev", "privileged"); if (r) return r;
+      return pss ? ["Warning: would violate PodSecurity \"restricted\": privileged (container \"debug\" must not set securityContext.privileged=true)", "deployment.apps/debug created", "# its ReplicaSet can't create pods: admission rejects them (kubectl get events -n dev)"] : ["deployment.apps/debug created   # privileged pod allowed: dev doesn't enforce Pod Security"];
+    },
+    label({ pos }) {
+      if (!/^(ns|namespaces?)$/.test(pos[0] || "")) return undefined;
+      if (pos[1] !== "dev") return { err: `Error from server (NotFound): namespaces "${pos[1] || ""}" not found` };
+      const l = pos[2] || "";
+      if (!l.startsWith("pod-security.kubernetes.io/enforce")) return { err: "this lesson models the label pod-security.kubernetes.io/enforce=restricted" };
+      const on = !l.endsWith("-");
+      if (on && !/=restricted$/.test(l)) return { err: "this lesson models the restricted level: pod-security.kubernetes.io/enforce=restricted" };
+      if (on === pss) return ["namespace/dev not labeled   # already " + (pss ? "enforcing" : "not enforcing")];
+      S.stopTour(); togglePss(); return [`namespace/dev ${on ? "labeled" : "unlabeled"}`];
+    },
+  },
+});
+// a RoleBinding's subjects are editable: who holds the role
+ROLES.forEach((r, i) => Object.assign(S.PARTS["role-" + i], {
+  fields: (kind) => (kind === "RoleBinding" || kind === "ClusterRoleBinding" ? { "subjects*": { optional: true, check: (v, all, path) => (/\.name$/.test(path) && v !== undefined && !bindings[v] ? `no such subject in this lesson (alice, ci-bot, monitor)` : ""), set: () => {} } } : kind === "Role" || kind === "ClusterRole" ? { "rules*": { optional: true, check: () => "this lesson keeps the role's rules fixed; change who is bound instead (the RoleBinding's subjects)", set: () => {} } } : null),
+  applied: (all) => { const names = Object.entries(all).filter(([k]) => /^subjects\[\d+\]\.name$/.test(k)).map(([, v]) => String(v)); if (!Object.keys(all).some((k) => k.startsWith("subjects"))) return; SUBJ.forEach((s) => { if (names.includes(s.id)) bindings[s.id].add(r.id); else bindings[s.id].delete(r.id); }); S.stopTour(); },
+}));
+const pad = (rows) => { const w = []; rows.forEach((r) => r.forEach((c, i) => (w[i] = Math.max(w[i] || 0, String(c).length)))); return rows.map((r) => r.map((c, i) => String(c).padEnd(w[i] + 3)).join("").trimEnd()); };
+// ---- end kubectl ----
 S.setTour([
   { home: true, say: "Three subjects send requests to the API server's gate. Behind it: the resources. At the back: who may do what.", hold: 6 },
   { focus: "role-1", zoom: 2.4, say: "alice's badge hangs on the deployer role: she may manage Deployments in dev, and read pods.", run: () => (who = "alice"), hold: 6 },

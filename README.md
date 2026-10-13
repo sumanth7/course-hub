@@ -40,4 +40,6 @@ Learner progress is stored in each visitor's browser (localStorage); there is no
 - `engine3d/yaml.js` parses YAML and reports errors the way the API server does.
 - `engine3d/kubectl.js` is a simulated kubectl. A lesson calls `S.kube({ objects, verbs, examples })`, and get, describe, logs, edit, apply and events then work against the lesson's own model.
 - A part becomes editable once it has `fields: { "spec.replicas": { check, set } }`. Changes to fields the lesson doesn't model are accepted and listed as ignored.
-- Lesson 05 (Deployments) is the reference: scale, set image, rollout status/history/undo/restart, and delete pod.
+- Every lesson has the terminal. Objects in a part's YAML are found automatically, so `get`, `describe` and `-o yaml` work with no extra code. Each lesson's `scene3d.js` ends with a "kubectl and the YAML editor" block that adds its own commands and editable fields.
+- Built in for any editable field: `label`, `scale`, `set image` and `patch`. Lessons can also add other CLIs as `tools`: helm, istioctl, docker, ssh, curl, etcdctl and kubeadm.
+- Lesson 05 (Deployments) is the fullest example: scale, set image, rollout status/history/undo/restart, and delete pod.

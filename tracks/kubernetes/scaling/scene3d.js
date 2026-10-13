@@ -42,7 +42,7 @@ S.label("node-2", "taint gpu=true:NoSchedule", { small: true, anchor: V(NODE_X[2
 
 // HPA gauge
 part("hpa", { kind: "HorizontalPodAutoscaler", title: "HPA web", zoom: 2.6, anchor: V(HPA.x, HPA.h + 12, HPA.z),
-  desc: () => `Reads web's average CPU (<b>${Math.round(hpa.util)}%</b>) against its target, <b>50%</b>, and sets replicas = ceil(load ÷ 50 per pod), between 2 and 10: <b>${hpa.replicas}</b> now. It scales up at once and down only after a stabilization window.`,
+  desc: () => `Reads web's average CPU (<b>${Math.round(hpa.util)}%</b>) against its target, <b>${Math.round(TARGET / PER_POD * 100)}%</b>, and sets replicas = ceil(load ÷ ${TARGET} per pod), between ${MIN} and ${MAX}: <b>${hpa.replicas}</b> now. It scales up at once and down only after a stabilization window.`,
   yaml: "kind: HorizontalPodAutoscaler\nspec:\n  scaleTargetRef: { kind: Deployment, name: web }\n  minReplicas: 2\n  maxReplicas: 10\n  metrics: [{ type: Resource, resource: { name: cpu, target: { type: Utilization, averageUtilization: 50 } } }]",
   actions: () => [{ label: "More load", run: () => setLoad(100) }, { label: "Less load", run: () => setLoad(-100) }] });
 own("hpa", housing({ x: HPA.x, z: HPA.z, w: HPA.w, d: HPA.d, h: HPA.h }), cyl(GAUGE.r, 0.6, { x: GAUGE.x, y0: HPA.h, z: GAUGE.z, tone: "hi", seg: 48 }));
@@ -76,7 +76,8 @@ const podObjs = Array.from({ length: POOL }, (_, i) => {
 });
 
 // ---- model (same rules as the 2D lesson) ----
-const PER_POD = 100, TARGET = 50, MIN = 2, MAX = 10;
+const PER_POD = 100;
+let TARGET = 50, MIN = 2, MAX = 10; // the HPA spec: editable from the YAML editor
 const hpa = { load: 150, replicas: 3, lowSince: 0, evalIn: 0, util: 0 };
 let tainted = true, msg = "", clock = 0;
 const nodes = [{ up: true }, { up: true }, { up: true }, { up: false, booting: 0, emptyFor: 0 }];
@@ -95,7 +96,7 @@ function step(dt) {
   if (hpa.evalIn <= 0) {
     hpa.evalIn = 1.5;
     const desired = Math.max(MIN, Math.min(MAX, Math.ceil(hpa.load / TARGET)));
-    if (desired > hpa.replicas) { hpa.replicas = desired; hpa.lowSince = 0; msg = `CPU is above the 50% target: the HPA raises replicas to ${desired} (load ${hpa.load} req/s ÷ 50 per pod).`; }
+    if (desired > hpa.replicas) { hpa.replicas = desired; hpa.lowSince = 0; msg = `CPU is above the ${Math.round(TARGET / PER_POD * 100)}% target: the HPA raises replicas to ${desired} (load ${hpa.load} req/s ÷ ${TARGET} per pod).`; }
     else if (desired < hpa.replicas) { hpa.lowSince += 1.5; if (hpa.lowSince >= 6) { hpa.replicas = desired; hpa.lowSince = 0; msg = `Load stayed low through the stabilization window, so the HPA scales down to ${desired}.`; } }
     else hpa.lowSince = 0;
   }
@@ -134,7 +135,7 @@ S.onTick((dt) => {
     S.setLabel(o.id, p.name + (p.state === "pending" ? " · Pending" : ""), { bad: p.state === "pending" });
   });
   const web = pods.filter((p) => p.kind === "web" && p.state !== "terminating");
-  S.say(`CPU ${Math.round(hpa.util)}% of target 50% · web ${web.filter((p) => p.state === "running").length}/${hpa.replicas}` + (pend.length ? ` · ${pend.length} pending` : "") + ` · nodes ${nodes[3].up ? 4 : 3}`);
+  S.say(`CPU ${Math.round(hpa.util)}% of target ${Math.round(TARGET / PER_POD * 100)}% · web ${web.filter((p) => p.state === "running").length}/${hpa.replicas}` + (pend.length ? ` · ${pend.length} pending` : "") + ` · nodes ${nodes[3].up ? 4 : 3}`);
   syncUi();
 });
 
@@ -154,11 +155,57 @@ function syncUi() {
 
 // ---- what the inspector shows ----
 const webCount = () => pods.filter((p) => p.kind === "web" && p.state !== "terminating").length;
-Object.assign(S.PARTS.hpa, { manifest: () => K.hpa({ current: Math.round(hpa.util), replicas: webCount(), desired: Math.max(2, Math.min(10, Math.ceil(hpa.load / 50))) }), facts: () => [["Load", hpa.load + " req/s"], ["CPU", Math.round(hpa.util) + "% (target 50%)"], ["Replicas", hpa.replicas]], kubectl: "kubectl get hpa web -w\nkubectl describe hpa web   # Events: New size: …; reason: cpu resource utilization above target" });
+Object.assign(S.PARTS.hpa, { manifest: () => K.hpa({ min: MIN, max: MAX, cpu: Math.round((TARGET / PER_POD) * 100), current: Math.round(hpa.util), replicas: webCount(), desired: Math.max(MIN, Math.min(MAX, Math.ceil(hpa.load / TARGET))) }), facts: () => [["Load", hpa.load + " req/s"], ["CPU", Math.round(hpa.util) + "% (target 50%)"], ["Replicas", hpa.replicas]], kubectl: "kubectl get hpa web -w\nkubectl describe hpa web   # Events: New size: …; reason: cpu resource utilization above target" });
 const nodeY = (n) => K.node({ name: "node-" + (n + 1), cidr: `10.244.${n + 1}.0/24`, ready: nodes[n].up, labels: n === 1 ? { disktype: "ssd" } : n === 2 ? { "nvidia.com/gpu": "true" } : {}, taints: n === 2 && tainted ? [{ key: "gpu", value: "true", effect: "NoSchedule" }] : [], allocated: `${used(n).length} of 4 pods` }) + (n === 3 ? "\n# ← added by the Cluster Autoscaler; removed when it sits empty" : "");
 NODE_X.forEach((_, n) => Object.assign(S.PARTS["node-" + n], { manifest: () => nodeY(n), facts: () => [["Pods", `${used(n).length} / 4`], ["Labels", n === 1 ? "disktype=ssd" : n === 2 ? "nvidia.com/gpu=true" : "–"], ["Taints", n === 2 && tainted ? "gpu=true:NoSchedule" : "none"]] }));
 podObjs.forEach((o, i) => Object.assign(S.PARTS[o.id], { manifest: () => { const p = pods[i]; if (!p) return ""; const base = K.pod({ name: p.name, labels: { app: p.kind }, node: p.node >= 0 ? "node-" + (p.node + 1) : "", ip: p.node >= 0 ? `10.244.${p.node + 1}.${30 + i}` : "", phase: p.state === "pending" ? "Pending" : "Running", ready: p.state === "running", reason: p.state === "pending" ? "Unschedulable" : undefined, resources: { reqCpu: "1", reqMem: "1Gi", limCpu: "1", limMem: "1Gi" }, owner: p.kind === "web" ? { kind: "ReplicaSet", name: "web-5f6a" } : undefined }); const rule = p.kind === "db" ? "\n# spec.nodeSelector: { disktype: ssd }   ← only nodes with this label" : p.kind === "trainer" ? "\n# spec.tolerations: [{ key: gpu, value: \"true\", effect: NoSchedule }]   ← may pass the taint\n# spec.affinity.nodeAffinity: required nvidia.com/gpu=true   ← and must land on a GPU node" : "\n# no nodeSelector, no tolerations   ← anywhere except tainted nodes"; return base + rule + (p.state === "pending" ? "\n# Events: FailedScheduling  0/3 nodes are available: 1 node(s) had untolerated taint {gpu: true}, 2 Insufficient cpu.   → triggers the Cluster Autoscaler" : ""); } }));
 
+// ---- kubectl and the YAML editor ----
+// the HPA's min, max and CPU target are editable; node-3's taint follows kubectl taint
+const intIn = (lo, hi) => (v) => (!Number.isInteger(v) ? "must be a whole number" : v < lo || v > hi ? `this lesson allows ${lo}–${hi}` : "");
+Object.assign(S.PARTS.hpa, { fields: {
+  "spec.minReplicas": { check: (v, all) => intIn(1, 6)(v) || (v > all["spec.maxReplicas"] ? "must be less than or equal to maxReplicas" : ""), set: (v) => { MIN = v; hpa.evalIn = 0; } },
+  "spec.maxReplicas": { check: intIn(2, 10), set: (v) => { MAX = v; hpa.evalIn = 0; } },
+  "spec.metrics[0].resource.target.averageUtilization": { check: intIn(10, 100), set: (v) => { TARGET = (v / 100) * PER_POD; hpa.evalIn = 0; } },
+} });
+let loadGens = 0;
+const loadRow = () => Array.from({ length: loadGens }, (_, k) => ({ kind: "Pod", name: "load-" + (k + 1), labels: { run: "load" }, row: { READY: "1/1", STATUS: "Running", RESTARTS: 0 }, wide: { IP: "10.244.1." + (90 + k), NODE: "node-1" }, logs: () => ["Connecting to web (10.96.0.30:80)", "writing to stdout", "-                    100% |********************************|   612  0:00:00 ETA"] }));
+S.kube({
+  ns: "default",
+  help: ["kubectl get hpa web -w   ·   kubectl edit hpa web   (min, max, CPU target)", "kubectl run load-1 --image=busybox -- /bin/sh -c 'while true; do wget -q -O- http://web; done'   (+100 req/s)", "kubectl delete pod load-1   (−100 req/s)", "kubectl taint nodes node-3 gpu=true:NoSchedule-   (remove the taint; without - to add it back)", "kubectl describe pod <pending web pod>   ·   kubectl get nodes"],
+  examples: ["kubectl get hpa web", "kubectl run load-1 --image=busybox -- /bin/sh -c 'while true; do wget -q -O- http://web; done'", "kubectl get hpa web -w", "kubectl get pods -o wide", "kubectl edit hpa web", "kubectl taint nodes node-3 gpu=true:NoSchedule-", "kubectl get nodes", "kubectl delete pod load-1"],
+  objects: () => [
+    { kind: "Deployment", name: "web", part: "hpa", labels: { app: "web" }, row: { READY: `${pods.filter((p) => p.kind === "web" && p.state === "running").length}/${hpa.replicas}`, "UP-TO-DATE": webCount(), AVAILABLE: pods.filter((p) => p.kind === "web" && p.state === "running").length }, manifest: () => K.deployment({ name: "web", replicas: hpa.replicas, image: "web:2.0" }) + "\n# ← spec.replicas is set by the HPA" },
+    ...pods.filter((p) => p.state !== "terminating").map((p, i) => ({ kind: "Pod", name: p.name, part: podObjs[pods.indexOf(p)]?.id, labels: { app: p.kind }, row: { READY: p.state === "running" ? "1/1" : "0/1", STATUS: p.state === "running" ? "Running" : "Pending", RESTARTS: 0 }, wide: { IP: p.node >= 0 ? `10.244.${p.node + 1}.${30 + pods.indexOf(p)}` : "<none>", NODE: p.node >= 0 ? "node-" + (p.node + 1) : "<none>" },
+      describe: p.state === "pending" ? () => [["Status:", "Pending"], ["Events:"], [`  Warning  FailedScheduling  default-scheduler  0/${nodes.filter((n) => n.up).length} nodes are available: ${[0, 1, 2, 3].filter((n) => nodes[n].up && allowed(p, n)).length ? "Insufficient pods on the nodes it may use" : ""}${tainted ? ", 1 node(s) had untolerated taint {gpu: true}" : ""}. preemption: not helpful.`], ["  Normal   TriggeredScaleUp  cluster-autoscaler  pod triggered scale-up: [node-group-1 3->4 (max: 4)]"]] : undefined })),
+    ...loadRow(),
+  ],
+  verbs: {
+    run({ pos, f }) {
+      const name = pos[0];
+      if (!f["--image"]) return { err: 'error: required flag(s) "image" not set' };
+      if (!/^load-\d+$/.test(name || "")) return { err: "This lesson's extra pods are load generators: kubectl run load-1 --image=busybox -- /bin/sh -c 'while true; do wget -q -O- http://web; done'" };
+      if (+name.split("-")[1] !== loadGens + 1) return { err: `Error from server (AlreadyExists): pods "${name}" already exists, or skips a number: next is load-${loadGens + 1}` };
+      S.stopTour(); loadGens++; setLoad(100); return `pod/${name} created   # +100 req/s on web (now ${hpa.load})`;
+    },
+    delete({ pos }) {
+      let [what, name] = pos; if (what && what.includes("/")) [what, name] = what.split("/");
+      if (/^(po|pods?)$/.test(what || "") && /^load-\d+$/.test(name || "")) { if (+name.split("-")[1] !== loadGens) return { err: `Error from server (NotFound): pods "${name}" not found   # delete the newest: load-${loadGens}` }; S.stopTour(); loadGens--; setLoad(-100); return `pod "${name}" deleted   # −100 req/s (now ${hpa.load})`; }
+      return { err: "This lesson lets you delete the load generators (kubectl delete pod load-N); the HPA owns the web pods." };
+    },
+    taint({ pos }) {
+      const [what, node, spec] = pos;
+      if (!/^(no|nodes?)$/.test(what || "")) return { err: "error: taint applies to nodes: kubectl taint nodes node-3 gpu=true:NoSchedule" };
+      if (node !== "node-3") return { err: `This lesson's taint lives on node-3 (${node} has none to change)` };
+      if (!spec) return { err: "error: at least one taint update is required" };
+      const off = spec.endsWith("-"), key = spec.replace(/-$/, "").split(/[=:]/)[0];
+      if (key !== "gpu") return { err: `error: taint "${key}" not found on node-3; it has gpu=true:NoSchedule` };
+      if (off === !tainted) return { err: off ? 'error: taint "gpu:NoSchedule" not found' : 'error: node node-3 already has gpu taint(s) with same effect(s) and --overwrite is false' };
+      S.stopTour(); toggleTaint(); return `node/node-3 ${off ? "untainted" : "tainted"}`;
+    },
+  },
+});
+// ---- end kubectl ----
 S.setTour([
   { home: true, say: "Three nodes. db must run on the ssd node; trainer is the only pod allowed past node-3's taint barrier.", hold: 6 },
   { focus: "hpa", zoom: 2.6, say: "The HPA reads web's CPU against a 50% target. Raise the load...", run: () => setLoad(150), hold: 5 },

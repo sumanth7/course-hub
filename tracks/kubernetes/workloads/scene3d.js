@@ -168,10 +168,40 @@ NODE_X.forEach((_, n) => {
   Object.assign(S.PARTS["ds-" + n], { manifest: () => (ds.pods[n] ? K.pod({ name: "log-agent-" + ["x2kd", "p9fw", "m4tq", "r7cv"][n], ns: "kube-system", labels: { app: "log-agent" }, image: "fluent-bit:3", node: "node-" + (n + 1), ip: `10.244.${n + 1}.40`, owner: { kind: "DaemonSet", name: "log-agent" } }) : K.daemonset({ desired: ds.nodes })) });
   Object.assign(S.PARTS["node-" + n], { manifest: () => K.node({ name: "node-" + (n + 1), cidr: `10.244.${n + 1}.0/24`, ready: n < ds.nodes }) });
 });
-[0, 1, 2].forEach((n) => Object.assign(S.PARTS["job-" + n], { manifest: () => { const r = job.running.find((x) => x.node === n), f = job.finished.filter((x) => x.node === n).slice(-1)[0]; return K.pod({ name: `${jobName || "report-1"}-${["k7x2p", "m3q9z", "t8w4c"][n]}`, labels: { "job-name": jobName || "report-1" }, image: "report:2.1", node: "node-" + (n + 1), ip: `10.244.${n + 1}.50`, owner: { kind: "Job", name: jobName || "report-1" }, ready: !!r, phase: r ? "Running" : f ? (f.ok ? "Succeeded" : "Failed") : "Pending", reason: f && !r ? (f.ok ? "Completed" : "Error") : undefined }); } }));
+[0, 1, 2].forEach((n) => Object.assign(S.PARTS["job-" + n], { manifest: () => { const r = job.running.find((x) => x.node === n), f = job.finished.filter((x) => x.node === n).slice(-1)[0]; if (!r && !f) return ""; return K.pod({ name: `${jobName || "report-1"}-${["k7x2p", "m3q9z", "t8w4c"][n]}`, labels: { "job-name": jobName || "report-1" }, image: "report:2.1", node: "node-" + (n + 1), ip: `10.244.${n + 1}.50`, owner: { kind: "Job", name: jobName || "report-1" }, ready: !!r, phase: r ? "Running" : f ? (f.ok ? "Succeeded" : "Failed") : "Pending", reason: f && !r ? (f.ok ? "Completed" : "Error") : undefined }); } }));
 Object.assign(S.PARTS.cron, { manifest: () => K.cronjob({ on: cron.on }) + (jobName ? "\n---\n" + K.job({ name: jobName, succeeded: job.done, active: job.running.length, failed: job.failedOnce ? 1 : 0 }) : ""), facts: () => [["Schedule", cron.on ? "on" : "suspended"], ["Last Job", jobName || "none yet"], ["Progress", `${job.done}/4 succeeded`]] });
 Object.assign(S.PARTS.plate, { manifest: () => K.statefulset({ replicas: stsState.replicas, ready: stsState.members.filter((x) => x && x.state === "ready").length }) + "\n---\n" + K.daemonset({ desired: ds.nodes, ready: ds.pods.filter(Boolean).length }) });
 
+// ---- kubectl and the YAML editor ----
+// StatefulSet replicas and the CronJob's suspend flag are editable
+Object.assign(S.PARTS.plate, { fields: (kind) => (kind === "StatefulSet" ? { "spec.replicas": { check: (v) => (!Number.isInteger(v) ? "must be a whole number" : v < 1 || v > 3 ? "this lesson has room for 1–3 db pods" : ""), set: (v) => { stsState.replicas = v; } } } : kind === "DaemonSet" ? {} : null) });
+Object.assign(S.PARTS.cron, { fields: (kind) => (kind === "CronJob" ? { "spec.suspend": { check: (v) => (typeof v !== "boolean" ? "must be true or false" : ""), set: (v) => { cron.on = !v; } } } : null) });
+const stsRow = () => `${stsState.members.filter((m) => m && m.state === "ready").length}/${stsState.replicas}`;
+S.kube({
+  ns: "default",
+  help: ["kubectl get sts,ds,jobs,cronjobs", "kubectl scale sts db --replicas=1..3", "kubectl delete pod db-1   (it comes back as db-1)", "kubectl get pvc", "kubectl create job report-now --from=cronjob/report", "kubectl patch cronjob report -p '{\"spec\":{\"suspend\":true}}'", "kubeadm join …   ·   kubectl delete node node-4   (node-4 joins / leaves)"],
+  examples: ["kubectl get sts,ds,cronjobs,jobs", "kubectl get pods -o wide -A", "kubectl delete pod db-1", "kubectl scale sts db --replicas=1", "kubectl get pvc", "kubeadm join 10.0.0.1:6443 --token abc.123", "kubectl get ds -n kube-system", "kubectl create job report-now --from=cronjob/report", "kubectl get jobs -w"],
+  verbs: {
+    delete({ pos }) {
+      let [what, ...names] = pos; if (what && what.includes("/")) { names = pos.map((x) => x.split("/")[1]); what = pos[0].split("/")[0]; }
+      const k = KUBE.kindOf(what || "");
+      if (k === "Node") { if (names[0] !== "node-4" || ds.nodes < 4) return { err: names[0] === "node-4" ? 'Error from server (NotFound): nodes "node-4" not found' : `This lesson keeps ${names[0]}; node-4 is the one that can leave.` }; S.stopTour(); toggleNode4(); return 'node "node-4" deleted'; }
+      if (k !== "Pod") return { err: `kubectl delete ${what || ""} isn't part of this lesson; try kubectl delete pod db-1` };
+      S.stopTour();
+      return { lines: names.map((n) => { const m = n.match(/^db-(\d)$/); const mem = m && stsState.members[+m[1]]; if (!mem) return `Error from server (NotFound): pods "${n}" not found`; mem.state = "terminating"; mem.t = 0; stsState.msg = `Deleted ${n}. It comes back as ${n}, not a random name, and picks up data-${n} again.`; return `pod "${n}" deleted`; }) };
+    },
+    create({ pos, f }) {
+      if (pos[0] !== "job" || !f["--from"]) return undefined;
+      if (f["--from"] !== "cronjob/report") return { err: `Error from server (NotFound): cronjobs.batch "${String(f["--from"]).split("/").pop()}" not found` };
+      S.stopTour(); const was = job.active; startJob("manual"); if (!was && pos[1]) jobName = pos[1];
+      return was ? { err: "# a Job from this CronJob is still running; this demo runs one at a time" } : `job.batch/${jobName} created`;
+    },
+  },
+  tools: {
+    kubeadm({ pos }) { if (pos[0] !== "join") return { err: "this lesson simulates kubeadm join only" }; if (ds.nodes > 3) return { err: "node-4 has already joined" }; S.stopTour(); toggleNode4(); return ["[preflight] Running pre-flight checks", "[kubelet-start] Starting the kubelet", "This node has joined the cluster: node-4", "# watch: the DaemonSet puts a log-agent on it at once"]; },
+  },
+});
+// ---- end kubectl ----
 S.setTour([
   { home: true, say: "Three nodes, three bays each, three kinds of workload. Watch the StatefulSet start up first.", hold: 5 },
   { focus: "db-0", zoom: 2.4, say: "A StatefulSet creates db-0, then db-1, then db-2, each only after the one before is Ready. Each gets its own volume claim.", hold: 6 },

@@ -125,6 +125,57 @@ Object.assign(S.PARTS.kit, { manifest: () => `# helm history shop\nREVISION  STA
 Object.assign(S.PARTS.printer, { manifest: () => "# kubectl get events --sort-by=.lastTimestamp\n" + events().join("\n") });
 Object.assign(S.PARTS.node, { manifest: () => K.node({ name: "node-1", cpu: "4", mem: "8Gi" }) });
 
+// ---- kubectl and the YAML editor ----
+// helm and kubectl both work here; editing values.yaml is a helm upgrade
+const KEYS = { "image.tag": "tag", "env.DATABASE_URL": "db", "resources.memory": "mem", "service.selector.app": "sel" };
+Object.assign(S.PARTS.values, {
+  fields: Object.fromEntries(Object.entries(KEYS).map(([path, k]) => [path, { optional: true, check: (v) => (v !== undefined && v !== null && typeof v === "object" ? "must be a string" : ""), set: () => {} }])),
+  applied: (all) => { const change = {}; for (const [path, k] of Object.entries(KEYS)) { const v = all[path]; const nv = v === undefined || v === null ? "" : String(v); if (nv !== vals()[k]) change[k] = nv; } if (Object.keys(change).length) { S.stopTour(); upgrade(change, "-f values.yaml"); } },
+  appliedMsg: (changed) => (changed ? `Release "shop" has been upgraded. Happy Helming!\nREVISION: ${history.length}` : "Release \"shop\" unchanged"),
+});
+S.kube({
+  ns: "default",
+  help: ["helm upgrade shop ./shop --set image.tag=1.4.3-typo | env.DATABASE_URL=null | resources.memory=64Gi | service.selector.app=shopp", "helm history shop   ·   helm rollback shop [REVISION]   ·   helm get values shop", "kubectl get pods   ·   kubectl describe pod shop-7f6d   ·   kubectl logs shop-7f6d [--previous]", "kubectl get events --sort-by=.lastTimestamp   ·   kubectl get endpoints shop", "kubectl edit … is off here: change values.yaml in the panel (Edit), which runs helm upgrade"],
+  examples: ["helm upgrade shop ./shop --set image.tag=1.4.3-typo", "kubectl get pods", "kubectl describe pod shop-7f6d", "kubectl logs shop-7f6d --previous", "kubectl get events --sort-by=.lastTimestamp", "kubectl get endpoints shop", "helm history shop", "helm rollback shop 1"],
+  objects: () => [
+    ...NAMES.map((n, i) => ({ kind: "Pod", name: n, part: "pod-" + i, labels: { app: "shop" }, row: { READY: status() === "Running" ? "1/1" : "0/1", STATUS: status(), RESTARTS: restarts }, wide: { IP: fault === "pending" ? "<none>" : `10.244.1.${21 + i}`, NODE: fault === "pending" ? "<none>" : "node-1" },
+      logs: () => ({ none: ["shop 1.4.2 listening on :8080"], selector: ["shop 1.4.2 listening on :8080", "(no requests arrive: the Service has no endpoints)"], crash: ["Error: DATABASE_URL is not set", "exit status 1"], image: [`Error from server (BadRequest): container "shop" in pod "${n}" is waiting to start: trying and failing to pull image`], pending: [`Error from server (BadRequest): pod ${n} is Pending: not scheduled to a node yet`] })[fault],
+      describe: () => [["Status:", status()], ["Image:", "shop:" + vals().tag], ["Limits:", "memory: " + vals().mem], ["Restart Count:", restarts], ["Events (helm lesson):"], ...events().map((e) => ["  " + e])] })),
+    { kind: "Endpoints", name: "shop", part: "svc", row: { ENDPOINTS: endpoints().join(",") || "<none>" } },
+    { kind: "Deployment", name: "shop", part: "kit", labels: { app: "shop", "app.kubernetes.io/managed-by": "Helm" }, row: { READY: `${status() === "Running" ? 3 : 0}/3`, "UP-TO-DATE": 3, AVAILABLE: status() === "Running" ? 3 : 0 }, manifest: () => K.deployment({ name: "shop", replicas: 3, image: "shop:" + vals().tag, ready: status() === "Running" ? 3 : 0, revision: history.length }) },
+  ],
+  verbs: {
+    get({ pos, f }) { if (!/^(ev|events?)$/.test(pos[0] || "")) return undefined; run("events"); return ["LAST SEEN   TYPE      REASON   OBJECT   MESSAGE", ...events().map((e) => "5s          " + e)]; },
+    edit({ pos }) { if (/values/.test(pos.join(" "))) return undefined; return { err: "In this lesson Helm owns the objects: a kubectl edit would be overwritten by the next helm upgrade. Edit values.yaml instead (click the values sheet → Edit)." }; },
+  },
+  tools: {
+    helm({ pos, f }) {
+      const [cmd, rel] = pos;
+      if (!cmd) return { err: "Usage: helm upgrade|rollback|history|get values|list|status shop" };
+      if (cmd !== "list" && cmd !== "ls" && rel !== "shop" && !(cmd === "get" && pos[2] === "shop")) return { err: `Error: release: not found${rel ? ` (${rel}); this lesson's release is shop` : ""}` };
+      if (cmd === "list" || cmd === "ls") return ["NAME   NAMESPACE   REVISION   STATUS     CHART        APP VERSION", `shop   default     ${String(history.length).padEnd(11)}deployed   shop-1.2.0   1.4.2`];
+      if (cmd === "status") return [`NAME: shop`, `NAMESPACE: default`, `STATUS: deployed`, `REVISION: ${history.length}`, fault === "none" ? "# the release is deployed; the pods are healthy" : "# deployed only means Helm applied the objects: the pods may still be broken (kubectl get pods)"];
+      if (cmd === "history") return ["REVISION   STATUS       DESCRIPTION", ...history.map((h, k) => `${String(k + 1).padEnd(11)}${(k === history.length - 1 ? "deployed" : "superseded").padEnd(13)}${k === 0 ? "Install complete" : "Upgrade complete"}${faultOf(h.values) !== "none" ? "   # " + faultOf(h.values) + " fault" : ""}`)];
+      if (cmd === "get") { if (pos[1] !== "values") return { err: "this lesson simulates helm get values shop" }; const v = vals(); return ["USER-SUPPLIED VALUES:", `image: { tag: ${v.tag} }`, `env: { DATABASE_URL: ${v.db || "null"} }`, `resources: { memory: ${v.mem} }`, `service: { selector: { app: ${v.sel} } }`]; }
+      if (cmd === "rollback") {
+        S.stopTour();
+        const rev = pos[2] ? +pos[2] : 0;
+        if (rev) { if (!history[rev - 1]) return { err: `Error: release has no ${rev} version` }; history.push({ values: { ...history[rev - 1].values } }); fault = faultOf(vals()); t = 0; restarts = 0; msg = `Rolled back to revision ${rev}'s values, as revision ${history.length}.`; return [`Rollback was a success! Happy Helming!`]; }
+        rollback(); return ["Rollback was a success! Happy Helming!"];
+      }
+      if (cmd === "upgrade") {
+        const sets = [].concat(f["--set"] || []).flatMap((x) => String(x).split(","));
+        if (!sets.length) return { err: "Error: this lesson's upgrades change one value: --set image.tag=… | env.DATABASE_URL=… | resources.memory=… | service.selector.app=…" };
+        const change = {};
+        for (const kv of sets) { const [k, v] = kv.split("="); if (!KEYS[k]) return { err: `Error: this chart's values are ${Object.keys(KEYS).join(", ")}` }; change[KEYS[k]] = v === "null" || v === undefined ? "" : v; }
+        S.stopTour(); upgrade(change, sets.map((x) => "--set " + x).join(" "));
+        return [`Release "shop" has been upgraded. Happy Helming!`, `NAME: shop`, `STATUS: deployed`, `REVISION: ${history.length}`];
+      }
+      return { err: `Error: unknown command "${cmd}" for "helm"` };
+    },
+  },
+});
+// ---- end kubectl ----
 S.setTour([
   { home: true, say: "A Helm chart and its values installed release shop: three pods and a Service. Everything is healthy.", hold: 5 },
   { focus: "values", zoom: 2.6, say: "helm upgrade with a typo in the image tag. The sheet marks the bad value...", run: BREAK.image, hold: 5 },

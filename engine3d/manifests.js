@@ -15,7 +15,8 @@ const K = {
     const pr = probes ? `    startupProbe:   { httpGet: { path: /healthz, port: 8080 }, periodSeconds: 10, failureThreshold: 10 }\n    livenessProbe:  { httpGet: { path: /healthz, port: 8080 }, periodSeconds: 10, failureThreshold: 3 }   # ← fail 3× → restart\n    readinessProbe: { httpGet: { path: /ready,   port: 8080 }, periodSeconds: 10, failureThreshold: 3 }   # ← fail → out of the Service\n` : "";
     const envY = env ? `    env:\n${env.map((e) => `    - ${e}`).join("\n")}\n` : "";
     const vol = volumes ? `    volumeMounts:\n${volumes.map((v) => `    - { name: ${v.name}, mountPath: ${v.path} }`).join("\n")}\n` : "";
-    const volS = volumes ? `  volumes:\n${volumes.map((v) => `  - { name: ${v.name}, ${v.src} }`).join("\n")}\n` : "";
+    // a note in src ("… # ← why") goes after the closing brace, or the YAML would not parse
+    const volS = volumes ? `  volumes:\n${volumes.map((v) => { const [body, note] = String(v.src).split(/\s+(?=#)/); return `  - { name: ${v.name}, ${body.trim()} }${note ? "   " + note : ""}`; }).join("\n")}\n` : "";
     const cState = state || (phase === "Running" ? `running: { startedAt: "${ago(restarts + 3)}" }` : phase === "Pending" ? `waiting: { reason: ${reason || "ContainerCreating"} }` : `terminated: { reason: ${reason || "Completed"}, exitCode: ${reason === "Error" ? 1 : 0} }`);
     return `apiVersion: v1
 kind: Pod
@@ -257,8 +258,7 @@ ${rules.map((r) => `- apiGroups: [${r.groups.map((g) => yq(g)).join(", ")}]\n  r
   rolebinding({ name, ns = "dev", role, subjects, cluster = false }) {
     return `apiVersion: rbac.authorization.k8s.io/v1
 kind: ${cluster ? "ClusterRoleBinding" : "RoleBinding"}
-${meta({ name, ns }, cluster)}subjects:   # ← who gets the role
-${subjects.length ? subjects.map((s) => `- { kind: ${s.kind}, name: ${s.name}${s.kind === "ServiceAccount" ? ", namespace: dev" : ""} }`).join("\n") : "[]"}
+${meta({ name, ns }, cluster)}${subjects.length ? "subjects:   # ← who gets the role\n" + subjects.map((s) => `- { kind: ${s.kind}, name: ${s.name}${s.kind === "ServiceAccount" ? ", namespace: dev" : ""} }`).join("\n") : "subjects: []   # ← who gets the role: nobody yet"}
 roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ${cluster ? "ClusterRole" : "Role"}, name: ${role} }`;
   },
   serviceaccount({ name, ns = "dev" }) {
