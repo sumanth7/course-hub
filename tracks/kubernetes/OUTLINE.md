@@ -7,21 +7,21 @@ The lesson list, goals and concepts live in `catalog.mjs` (the hub is generated 
 
 | Lesson | Physical metaphor | Status |
 |---|---|---|
-| Containers & images | Shipping crates stamped from a die (the image), stacked in a registry rack | To build |
+| Containers & images | Shipping crates stamped from a die (the image), stacked in a registry rack | Built |
 | The cluster at a glance | Container yard: cabinet, trays, crane, Service gate, ingress router | Built (`cluster-yard`) |
-| Inside the control plane | A mailroom: front desk (API server), ledger vault (etcd), clerks (controllers) | To build |
-| Pods, labels & namespaces | Crates with tags and lamps for each phase; fenced yard sections | To build |
-| Deployments & rollouts | Crates stencilled v1/v2, the crane swaps them one at a time while traffic flows | To build |
-| Pod networking & Services | Pneumatic tubes between crates; the gate with endpoint lamps; a directory board (DNS) | To build |
-| Ingress & NetworkPolicy | Edge router with a route table; gates between yard sections | To build |
-| ConfigMaps & Secrets | A crate opened up: an env plugboard and mounted file drawers, a locked drawer | To build |
-| Health probes | A test bench that taps each crate: a lamp gates traffic, a reset arm restarts it | To build |
-| Requests, limits & QoS | Trays with weight scales; an overload trapdoor evicts the lowest class first | To build |
-| Volumes, PVs & PVCs | Lockers (PVs), claim tickets (PVCs), a locker factory (StorageClass) | To build |
-| StatefulSets, DaemonSets & Jobs | Numbered berths, one crate bolted to every tray, a timed conveyor | To build |
-| Autoscaling & placement | Load gauge turns the replica knob; keyed slots and "keep off" plates on trays | To build |
-| ServiceAccounts & RBAC | Badges for crates, keycards and a permission board | To build |
-| Debugging & Helm | Inspection hatch and event tape; a flat-pack kit (chart) with a parts list (values) | To build |
+| Inside the control plane | A mailroom: front desk (API server), ledger vault (etcd), clerks (controllers) | Built |
+| Pods, labels & namespaces | Crates with tags and lamps for each phase; fenced yard sections | Built |
+| Deployments & rollouts | Crates stencilled v1/v2, the crane swaps them one at a time while traffic flows | Built |
+| Pod networking & Services | Pneumatic tubes between crates; the gate with endpoint lamps; a directory board (DNS) | Built |
+| Ingress & NetworkPolicy | Edge router with a route table; gates between yard sections | Built |
+| ConfigMaps & Secrets | A crate opened up: an env plugboard and mounted file drawers, a locked drawer | Built |
+| Health probes | A test bench that taps each crate: a lamp gates traffic, a reset arm restarts it | Built |
+| Requests, limits & QoS | Trays with weight scales; an overload trapdoor evicts the lowest class first | Built |
+| Volumes, PVs & PVCs | Lockers (PVs), claim tickets (PVCs), a locker factory (StorageClass) | Built |
+| StatefulSets, DaemonSets & Jobs | Numbered berths, one crate bolted to every tray, a timed conveyor | Built |
+| Autoscaling & placement | Load gauge turns the replica knob; keyed slots and "keep off" plates on trays | Built |
+| ServiceAccounts & RBAC | Badges for crates, keycards and a permission board | Built |
+| Debugging & Helm | Inspection hatch and event tape; a flat-pack kit (chart) with a parts list (values) | Built |
 | Beyond: Istio ingress | Sorting station: TLS port, turntable, subset tracks, istiod | Built (`istio-ingress`) |
 
 ## Shared visual language

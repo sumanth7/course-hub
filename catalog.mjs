@@ -14,7 +14,7 @@ export const TRACKS = [
     // Each lesson lists the beginner concepts it teaches. Lesson 2 is an overview figure that previews
     // many of them at once; the lessons after it go deeper one area at a time.
     lessons: [
-      { slug: "containers", title: "Containers & images", status: "planned",
+      { slug: "containers", title: "Containers & images", status: "live", minutes: 8,
         goal: "Explain what a container is, where images come from, and why running many of them by hand calls for an orchestrator.",
         concepts: ["Containers vs VMs", "Images & registries", "Why orchestration", "Declarative vs imperative"] },
       { slug: "cluster-yard", title: "The cluster at a glance", status: "live", minutes: 10,
