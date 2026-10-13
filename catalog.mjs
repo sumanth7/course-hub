@@ -20,7 +20,7 @@ export const TRACKS = [
       { slug: "cluster-yard", title: "The cluster at a glance", status: "live", minutes: 10,
         goal: "See the whole system work at once: the control plane keeps replicas running, the scheduler places pods, and traffic reaches them through a Service and an Ingress.",
         concepts: ["Cluster, nodes, control plane", "Scheduler", "Reconcile loop", "kubelet", "Pods", "ReplicaSets", "Deployments (replicas)", "Self-healing", "Services", "Endpoints & kube-proxy", "Ingress"] },
-      { slug: "control-plane", title: "Inside the control plane", status: "planned",
+      { slug: "control-plane", title: "Inside the control plane", status: "live", minutes: 10,
         goal: "Follow a kubectl apply from YAML to running pod through the API server, etcd and the controllers.",
         concepts: ["API server", "etcd", "Controller manager", "Container runtime", "kubectl & manifests"] },
       { slug: "pods", title: "Pods, labels & namespaces", status: "live", minutes: 8,
