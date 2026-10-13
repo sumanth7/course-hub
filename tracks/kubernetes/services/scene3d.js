@@ -140,7 +140,7 @@ S.onTick((dt) => {
     S.setLabel(p.id, b && !b.gone ? `backend-${b.id} · ${b.ip}` : "", { show: !!b && !b.gone });
   });
   const eps = endpoints();
-  epLamps.forEach((e, i) => { e.l.set(eps[i] ? "on" : "off"); const ip = eps[i] ? eps[i].ip : ""; if (e.L.el.textContent !== ip) e.L.el.textContent = ip; e.L.el.style.display = ip ? "" : "none"; });
+  epLamps.forEach((e, i) => { e.l.set(eps[i] ? "on" : "off"); const ip = eps[i] ? eps[i].ip : ""; if (e.L.el.textContent !== ip) e.L.el.textContent = ip; e.L.show = !!ip; });
   proxies.forEach((p, n) => {
     p.syncT = Math.max(0, (p.syncT || 0) - dt * 1.5);
     p.sync.set(p.syncT > 0 ? "accent" : "off");
