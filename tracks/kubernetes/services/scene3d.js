@@ -69,8 +69,8 @@ part("ledger", { kind: "Service + EndpointSlice", title: "svc/backend · Cluster
   yaml: () => `kind: Service\nmetadata: { name: backend }\nspec:\n  type: ${svc.type}\n  selector: { app: backend }\n  ports: [{ port: 80, targetPort: 8080${svc.type !== "ClusterIP" ? ", nodePort: 30080" : ""} }]`,
   actions: () => ["ClusterIP", "NodePort", "LoadBalancer"].filter((t) => t !== svc.type).map((t) => ({ label: "Make it " + t, run: () => { svc.type = t; } })) });
 own("ledger", housing({ x: LEDGER.x, z: LEDGER.z, w: LEDGER.w, d: LEDGER.d, h: LEDGER.h }));
-const epLamps = [0, 1, 2, 3].map((i) => { const l = lamp(LEDGER.x - 44 + i * 28, LEDGER.h, LEDGER.z, { r: 1.4 }); own("ledger", l.mesh); S.label("ledger", "", { small: true, anchor: V(LEDGER.x - 44 + i * 28, LEDGER.h + 6, LEDGER.z + 4) }); return { l, L: S.labels.ledger }; });
 label("ledger", "svc/backend · 10.96.0.20");
+const epLamps = [0, 1, 2, 3].map((i) => { const l = lamp(LEDGER.x - 44 + i * 28, LEDGER.h, LEDGER.z, { r: 1.4 }); own("ledger", l.mesh); const L = S.label("ledger", "", { small: true, anchor: V(LEDGER.x - 44 + i * 28, LEDGER.h + 6, LEDGER.z + 4) }); return { l, L }; });
 
 part("lb", { kind: "Cloud load balancer", title: "LoadBalancer 203.0.113.7", zoom: 2.6, anchor: V(LB.x, LB.h + 10, LB.z), desc: "With type LoadBalancer, the cloud provider puts a load balancer with a public address in front of the NodePorts on every node.", yaml: "kubectl get svc backend   # EXTERNAL-IP" });
 own("lb", housing({ x: LB.x, z: LB.z, w: LB.w, d: LB.d, h: LB.h }), track([[[PORT_X(0), LB_LANE], [LB.x, LB_LANE]], [[PORT_X(0), FACE_Z + 2], [PORT_X(0), LB_LANE]], [[PORT_X(1), FACE_Z + 2], [PORT_X(1), LB_LANE]]], { width: 4.8 }));

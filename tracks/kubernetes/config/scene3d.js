@@ -52,14 +52,14 @@ part("env", { kind: "Environment variables", title: "env (read at start)", zoom:
   actions: () => [{ label: "Restart the pod", run: restart }] });
 own("env", box(50, 10, 48, { x: ENV.x, y0: TOP + 1.6, z: ENV.z, tone: "mid", r: 0.6 }));
 const ROWS = ["LOG_LEVEL", "FEATURE_X", "DB_PASSWORD"];
-const envRows = ROWS.map((k, i) => { const l = lamp(ENV.x + 21, TOP + 11.6, ENV.z - 12 + i * 12, { r: 1.1, state: "off" }); own("env", l.mesh); const L = S.label("env", "", { small: true, anchor: V(ENV.x - 4, TOP + 13, ENV.z - 12 + i * 12) }); return { l, L, k }; });
 label("env", "env vars", { anchor: V(ENV.x, TOP + 18, ENV.z - 26) });
+const envRows = ROWS.map((k, i) => { const l = lamp(ENV.x + 21, TOP + 11.6, ENV.z - 12 + i * 12, { r: 1.1, state: "off" }); own("env", l.mesh); const L = S.label("env", "", { small: true, anchor: V(ENV.x - 4, TOP + 13, ENV.z - 12 + i * 12) }); return { l, L, k }; });
 part("files", { kind: "Mounted volume", title: "/etc/config (volume)", zoom: 3.2, anchor: V(FILES.x, TOP + 14, FILES.z),
   desc: () => (isFinite(syncIn) ? `The ConfigMap changed; the kubelet will refresh these files in about ${Math.ceil(syncIn)} s. The app must re-read them to notice.` : "One file per key, refreshed by the kubelet when the ConfigMap changes. No restart needed, but the app must re-read the file."),
   yaml: "volumeMounts: [{ name: config, mountPath: /etc/config }]\nvolumes: [{ name: config, configMap: { name: app } }]" });
 own("files", box(43, 10, 48, { x: FILES.x, y0: TOP + 1.6, z: FILES.z, tone: "mid", r: 0.6 }));
-const fileCards = ["LOG_LEVEL", "FEATURE_X"].map((k, i) => { const c = box(37, 0.6, 12, { x: FILES.x, y0: TOP + 11.6, z: FILES.z - 8 + i * 16, tone: "hi", r: 0.4 }); own("files", c); const L = S.label("files", "", { small: true, anchor: V(FILES.x, TOP + 14, FILES.z - 8 + i * 16) }); return { c, L, k }; });
 label("files", "/etc/config", { anchor: V(FILES.x, TOP + 18, FILES.z - 26) });
+const fileCards = ["LOG_LEVEL", "FEATURE_X"].map((k, i) => { const c = box(37, 0.6, 12, { x: FILES.x, y0: TOP + 11.6, z: FILES.z - 8 + i * 16, tone: "hi", r: 0.4 }); own("files", c); const L = S.label("files", "", { small: true, anchor: V(FILES.x, TOP + 14, FILES.z - 8 + i * 16) }); return { c, L, k }; });
 
 // ---- model ----
 const SYNC_DELAY = 5;

@@ -209,7 +209,8 @@ export function createStage({ home = { target: [0, 30, 0], dir: [1, 0.95, 1.05],
   // ---------- parts, labels ----------
   S.part = (id, info) => { S.PARTS[id] = { id, meshes: [], kind: "", title: id, desc: "", yaml: "", actions: [], anchor: V(0, 0, 0), ...info }; return id; };
   S.own = (id, ...objs) => { for (const o of objs) { o.traverse((c) => { if (c.isMesh) { c.userData.part = id; S.PARTS[id].meshes.push(c); } }); if (!o.parent) world.add(o); } return objs[0]; };
-  const labelEls = {};
+  const labelEls = {}; // a part's first label is its main one
+  const allLabels = [];
   S.labels = labelEls;
   S.label = (id, text, { small = false, anchor, lod = 0 } = {}) => {
     const el = document.createElement("div");
@@ -219,8 +220,10 @@ export function createStage({ home = { target: [0, 30, 0], dir: [1, 0.95, 1.05],
     const obj = new CSS2DObject(el);
     obj.position.copy(anchor || S.PARTS[id].anchor);
     scene.add(obj);
-    labelEls[id] = { el, obj, small, lod, show: true };
-    return labelEls[id];
+    const entry = { id, el, obj, small, lod, show: true };
+    allLabels.push(entry);
+    if (!labelEls[id]) labelEls[id] = entry;
+    return entry;
   };
   S.setLabel = (id, text, { bad = false, show = true } = {}) => {
     const L = labelEls[id]; if (!L) return;
@@ -448,7 +451,7 @@ export function createStage({ home = { target: [0, 30, 0], dir: [1, 0.95, 1.05],
     // labels: hide the small ones until zoomed in, and all of them on a crowded phone view
     const crowded = viewer.clientWidth < 600 && camera.zoom < 1.45;
     viewer.classList.toggle("labels-crowded", crowded);
-    for (const id in labelEls) { const L = labelEls[id]; L.obj.visible = (L.show && camera.zoom >= L.lod) || id === selected; }
+    for (const L of allLabels) L.obj.visible = (L.show && camera.zoom >= L.lod) || (L.id === selected && labelEls[L.id] === L);
     fitFrame();
     renderer.render(scene, camera);
     labels.render(scene, camera);
