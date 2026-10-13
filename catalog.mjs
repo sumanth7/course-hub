@@ -50,7 +50,7 @@ export const TRACKS = [
       { slug: "workloads", title: "StatefulSets, DaemonSets & Jobs", status: "live", minutes: 10,
         goal: "Pick the right workload type for a database, a per-node agent and a batch task.",
         concepts: ["StatefulSets", "DaemonSets", "Jobs", "CronJobs"] },
-      { slug: "scaling", title: "Autoscaling & placement", status: "planned",
+      { slug: "scaling", title: "Autoscaling & placement", status: "live", minutes: 10,
         goal: "Predict how replicas and nodes change with load, and steer pods onto or away from nodes.",
         concepts: ["Horizontal Pod Autoscaler", "Cluster Autoscaler", "Node selectors & affinity", "Taints & tolerations"] },
       { slug: "security", title: "ServiceAccounts & RBAC", status: "planned",
