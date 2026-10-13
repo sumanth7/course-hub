@@ -19,6 +19,13 @@ npm run build
 ```
 Then open `site/index.html`, or serve it with `npx serve site`.
 
+## 3D lessons
+Every lesson also has a 3D version at `site/<track>/<slug>/3d/`, built from two files next to its 2D build script:
+- `scene3d.js`: the scene and its model, using the shared engine (`createStage`, parts, labels, packets, tours).
+- `lesson3d.mjs`: the page text and the controls under the viewer.
+
+The engine lives in `engine3d/` (`engine.js` for the browser, `page.mjs` for the page template). It uses three.js from a CDN, so everything renders on the reader's device and the site stays static.
+
 ## Add a lesson
 1. Create `tracks/<track>/<slug>/build.mjs` (copy an existing one as a starting point).
 2. Set the lesson's `status` to `"live"` in `catalog.mjs`.

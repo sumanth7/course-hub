@@ -88,7 +88,7 @@ td[data-tone="bad"] { color: var(--bad); }
 .next { display: flex; justify-content: flex-end; margin-top: 18px; }
 .next a { text-decoration: none; font: 500 13px/1 var(--mono); border: 1px solid var(--line); border-radius: 999px; padding: 11px 15px; }
 .fallback { padding: 24px; color: var(--muted); }
-@media (max-width: 600px) { .viewer { height: min(66vh, 540px); } .rail button { padding: 7px 9px; font-size: 11.5px; } .tour-text { font-size: 12.5px; } }
+@media (max-width: 600px) { .top .where { flex-basis: 100%; order: 3; } .hud { bottom: 64px; } .hud #hint { display: none; } .viewer { height: min(66vh, 540px); } .rail button { padding: 7px 9px; font-size: 11.5px; } .tour-text { font-size: 12.5px; } }
 `;
 
 export function page3d({ title, pageTitle, lede, trackTitle, lessonNo, id, twoD, next, controls = "", caption = "", css = "", script, home }) {
