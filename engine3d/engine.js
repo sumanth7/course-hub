@@ -426,7 +426,7 @@ export function createStage({ home = { target: [0, 30, 0], dir: [1, 0.95, 1.05],
   }
   new ResizeObserver(resize).observe(viewer);
   resize();
-  let visible = true, last = 0, looping = false, fpsAcc = 0, fpsN = 0;
+  let visible = true, last = 0, looping = false, fpsAcc = 0, fpsN = 0, panelT = 0;
   S.fps = 0;
   const start = () => { if (!looping) { looping = true; last = 0; requestAnimationFrame(loop); } };
   new IntersectionObserver((e) => { visible = e[e.length - 1].isIntersecting; if (visible) start(); }, { rootMargin: "100px" }).observe(viewer);
@@ -453,6 +453,9 @@ export function createStage({ home = { target: [0, 30, 0], dir: [1, 0.95, 1.05],
     viewer.classList.toggle("labels-crowded", crowded);
     for (const L of allLabels) L.obj.visible = (L.show && camera.zoom >= L.lod) || (L.id === selected && labelEls[L.id] === L);
     fitFrame();
+    // keep a selected part's live text current, unless the reader is using the panel's buttons
+    panelT += dt;
+    if (panelT > 0.8) { panelT = 0; const p = selected && S.PARTS[selected]; if (p && (typeof p.desc === "function" || typeof p.title === "function") && !panel.contains(document.activeElement)) S.renderPanel(); }
     renderer.render(scene, camera);
     labels.render(scene, camera);
     const st = document.getElementById("stats");
