@@ -83,6 +83,9 @@ export const TRACKS = [
       { slug: "vpc-cni", title: "VPC CNI & pod IPs", status: "live", minutes: 12,
         goal: "See how the VPC CNI gives pods VPC addresses through ENIs and warm pools, why max pods depends on the instance type, and how to avoid running out of IPs.",
         concepts: ["Amazon VPC CNI", "ENIs & secondary IPs", "Warm pool (WARM_ENI_TARGET, WARM_IP_TARGET)", "Max pods per instance type", "Prefix delegation", "Subnet IP exhaustion", "Custom networking & secondary CIDRs"] },
+      { slug: "eks-iam", title: "IAM on EKS: access entries, IRSA & Pod Identity", status: "live", minutes: 14,
+        goal: "Follow how IAM identities get into an EKS cluster through access entries, and how pods get IAM roles through IRSA or EKS Pod Identity instead of the node's role.",
+        concepts: ["aws eks get-token & the authenticator", "Access entries & access policies", "aws-auth ConfigMap (legacy)", "IMDS & the node role", "IRSA (OIDC, AssumeRoleWithWebIdentity)", "EKS Pod Identity", "Least-privilege pod roles"] },
     ],
   },
   {

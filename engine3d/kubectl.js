@@ -43,7 +43,7 @@ const KUBE = (() => {
     if (cur || any) out.push(cur);
     return out;
   }
-  const TAKES = new Set(["--resources-vpc-config", "--scaling-config", "--cluster-name", "--name", "--nodegroup-name", "--fargate-profile-name", "--addon-name", "--addon-version", "--kubernetes-version", "--target-group-arn", "--paths", "--distribution-id", "--id", "--experiment-template-id", "--raw", "--role", "--clusterrole", "--user", "--serviceaccount", "-H", "-p", "--patch", "--from", "-o", "--output", "-n", "--namespace", "-l", "--selector", "-f", "--filename", "--replicas", "--to-revision", "-c", "--container", "--tail", "--field-selector", "--as", "--sort-by", "--image", "--revision", "--set"]);
+  const TAKES = new Set(["--principal-arn", "--policy-arn", "--access-scope", "--namespace", "--service-account", "--role-arn", "--profile", "--user", "--resources-vpc-config", "--scaling-config", "--cluster-name", "--name", "--nodegroup-name", "--fargate-profile-name", "--addon-name", "--addon-version", "--kubernetes-version", "--target-group-arn", "--paths", "--distribution-id", "--id", "--experiment-template-id", "--raw", "--role", "--clusterrole", "--user", "--serviceaccount", "-H", "-p", "--patch", "--from", "-o", "--output", "-n", "--namespace", "-l", "--selector", "-f", "--filename", "--replicas", "--to-revision", "-c", "--container", "--tail", "--field-selector", "--as", "--sort-by", "--image", "--revision", "--set"]);
   function parseArgs(ws) {
     const pos = [], f = {};
     for (let i = 0; i < ws.length; i++) {
@@ -311,6 +311,8 @@ const KUBE = (() => {
       const { pos, f } = parseArgs(rest);
       const verb = pos.shift();
       if (!verb || f["-h"] || f["--help"]) return { lines: help() };
+      // a lesson can refuse every kubectl call first (e.g. no IAM access to the cluster)
+      if (cfg.before) { const r = cfg.before(verb, { pos, f }); if (r) return out(r); }
       if (cfg.verbs[verb]) { const r = cfg.verbs[verb]({ pos, f }, ctx); if (r !== undefined) return out(r); }
       if (verb === "get") { const r = get(pos, f); if (!r.err) cfg.onGet?.(pos, f); return r; }
       if (verb === "describe") return describe(pos, f);
