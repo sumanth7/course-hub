@@ -80,6 +80,9 @@ export const TRACKS = [
       { slug: "eks", title: "EKS architecture", status: "live", minutes: 12,
         goal: "Know what AWS runs and what you run in EKS, how the control plane reaches your VPC, and how endpoint access, node groups and Fargate fit together.",
         concepts: ["EKS managed control plane", "Cross-account ENIs", "Public & private endpoints", "Managed node groups", "Fargate profiles", "Managed add-ons", "Multi-AZ control plane & etcd quorum"] },
+      { slug: "vpc-cni", title: "VPC CNI & pod IPs", status: "live", minutes: 12,
+        goal: "See how the VPC CNI gives pods VPC addresses through ENIs and warm pools, why max pods depends on the instance type, and how to avoid running out of IPs.",
+        concepts: ["Amazon VPC CNI", "ENIs & secondary IPs", "Warm pool (WARM_ENI_TARGET, WARM_IP_TARGET)", "Max pods per instance type", "Prefix delegation", "Subnet IP exhaustion", "Custom networking & secondary CIDRs"] },
     ],
   },
   {
