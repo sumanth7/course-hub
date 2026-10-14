@@ -77,6 +77,9 @@ export const TRACKS = [
       { slug: "platform", title: "Platform: CRDs, operators, quotas & Karpenter", status: "live", minutes: 14,
         goal: "Extend Kubernetes with a CRD and an operator, share a cluster fairly with quotas and limit ranges, and let Karpenter fit nodes to pods.",
         concepts: ["CustomResourceDefinitions", "Operators", "ResourceQuotas", "LimitRanges", "Multi-tenancy", "Karpenter provisioning", "Consolidation"] },
+      { slug: "eks", title: "EKS architecture", status: "live", minutes: 12,
+        goal: "Know what AWS runs and what you run in EKS, how the control plane reaches your VPC, and how endpoint access, node groups and Fargate fit together.",
+        concepts: ["EKS managed control plane", "Cross-account ENIs", "Public & private endpoints", "Managed node groups", "Fargate profiles", "Managed add-ons", "Multi-AZ control plane & etcd quorum"] },
     ],
   },
   {

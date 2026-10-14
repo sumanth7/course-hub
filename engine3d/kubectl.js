@@ -43,7 +43,7 @@ const KUBE = (() => {
     if (cur || any) out.push(cur);
     return out;
   }
-  const TAKES = new Set(["--target-group-arn", "--paths", "--distribution-id", "--id", "--experiment-template-id", "--raw", "--role", "--clusterrole", "--user", "--serviceaccount", "-H", "-p", "--patch", "--from", "-o", "--output", "-n", "--namespace", "-l", "--selector", "-f", "--filename", "--replicas", "--to-revision", "-c", "--container", "--tail", "--field-selector", "--as", "--sort-by", "--image", "--revision", "--set"]);
+  const TAKES = new Set(["--resources-vpc-config", "--scaling-config", "--cluster-name", "--name", "--nodegroup-name", "--fargate-profile-name", "--addon-name", "--addon-version", "--kubernetes-version", "--target-group-arn", "--paths", "--distribution-id", "--id", "--experiment-template-id", "--raw", "--role", "--clusterrole", "--user", "--serviceaccount", "-H", "-p", "--patch", "--from", "-o", "--output", "-n", "--namespace", "-l", "--selector", "-f", "--filename", "--replicas", "--to-revision", "-c", "--container", "--tail", "--field-selector", "--as", "--sort-by", "--image", "--revision", "--set"]);
   function parseArgs(ws) {
     const pos = [], f = {};
     for (let i = 0; i < ws.length; i++) {
