@@ -68,6 +68,9 @@ export const TRACKS = [
       { slug: "edge", title: "Edge: DNS, TLS & Gateway API", status: "live", minutes: 12,
         goal: "See how external-dns, cert-manager and a Gateway controller turn YAML into DNS records, a trusted certificate and a load balancer, and how Gateway API splits traffic.",
         concepts: ["external-dns", "cert-manager & ACME", "DNS-01 challenges", "Certificate renewal", "Gateway API (GatewayClass, Gateway, HTTPRoute)", "Traffic splitting & header matching", "Ingress vs Gateway API"] },
+      { slug: "delivery", title: "Delivery: GitOps, blue-green & canary", status: "live", minutes: 14,
+        goal: "Follow a change from commit to production through CI, Git, Kustomize and Argo CD, and release it safely with blue-green or canary.",
+        concepts: ["CI/CD & image promotion", "GitOps with Argo CD", "Kustomize overlays", "Drift & self-heal", "Blue-green deployments", "Canary releases", "Automated analysis & rollback"] },
     ],
   },
   {

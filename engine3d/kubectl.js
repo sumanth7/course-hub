@@ -17,10 +17,10 @@ const KUBE = (() => {
     TargetGroupBinding: ["targetgroupbindings", "targetgroupbinding", "tgb"], IngressClass: ["ingressclasses", "ingressclass"], PodDisruptionBudget: ["poddisruptionbudgets", "poddisruptionbudget", "pdb"],
     ResourceQuota: ["resourcequotas", "resourcequota", "quota"], LimitRange: ["limitranges", "limitrange", "limits"], CustomResourceDefinition: ["customresourcedefinitions", "customresourcedefinition", "crd"],
     Certificate: ["certificates", "certificate", "cert"], CertificateRequest: ["certificaterequests", "certificaterequest", "cr"], Order: ["orders", "order"], Challenge: ["challenges", "challenge"], ClusterIssuer: ["clusterissuers", "clusterissuer"], HTTPRoute: ["httproutes", "httproute"], GatewayClass: ["gatewayclasses", "gatewayclass", "gc"],
-    Application: ["applications", "application", "app"], Rollout: ["rollouts", "rollout", "ro"], ServiceMonitor: ["servicemonitors", "servicemonitor", "smon"], NodePool: ["nodepools", "nodepool"],
+    Application: ["applications", "application", "app"], Rollout: ["rollouts", "rollout", "ro"], AnalysisRun: ["analysisruns", "analysisrun", "ar"], ServiceMonitor: ["servicemonitors", "servicemonitor", "smon"], NodePool: ["nodepools", "nodepool"],
     Gateway: ["gateways", "gateway", "gw"], VirtualService: ["virtualservices", "virtualservice", "vs"], DestinationRule: ["destinationrules", "destinationrule", "dr"],
   };
-  const GROUP = { Deployment: "apps", ReplicaSet: "apps", StatefulSet: "apps", DaemonSet: "apps", Job: "batch", CronJob: "batch", Ingress: "networking.k8s.io", NetworkPolicy: "networking.k8s.io", HorizontalPodAutoscaler: "autoscaling", Role: "rbac.authorization.k8s.io", RoleBinding: "rbac.authorization.k8s.io", ClusterRole: "rbac.authorization.k8s.io", ClusterRoleBinding: "rbac.authorization.k8s.io", StorageClass: "storage.k8s.io", EndpointSlice: "discovery.k8s.io", Gateway: "networking.istio.io", VirtualService: "networking.istio.io", DestinationRule: "networking.istio.io", TargetGroupBinding: "elbv2.k8s.aws", IngressClass: "networking.k8s.io", PodDisruptionBudget: "policy", CustomResourceDefinition: "apiextensions.k8s.io", Certificate: "cert-manager.io", CertificateRequest: "cert-manager.io", Order: "acme.cert-manager.io", Challenge: "acme.cert-manager.io", ClusterIssuer: "cert-manager.io", HTTPRoute: "gateway.networking.k8s.io", GatewayClass: "gateway.networking.k8s.io", Application: "argoproj.io", Rollout: "argoproj.io", ServiceMonitor: "monitoring.coreos.com", NodePool: "karpenter.sh" };
+  const GROUP = { Deployment: "apps", ReplicaSet: "apps", StatefulSet: "apps", DaemonSet: "apps", Job: "batch", CronJob: "batch", Ingress: "networking.k8s.io", NetworkPolicy: "networking.k8s.io", HorizontalPodAutoscaler: "autoscaling", Role: "rbac.authorization.k8s.io", RoleBinding: "rbac.authorization.k8s.io", ClusterRole: "rbac.authorization.k8s.io", ClusterRoleBinding: "rbac.authorization.k8s.io", StorageClass: "storage.k8s.io", EndpointSlice: "discovery.k8s.io", Gateway: "networking.istio.io", VirtualService: "networking.istio.io", DestinationRule: "networking.istio.io", TargetGroupBinding: "elbv2.k8s.aws", IngressClass: "networking.k8s.io", PodDisruptionBudget: "policy", CustomResourceDefinition: "apiextensions.k8s.io", Certificate: "cert-manager.io", CertificateRequest: "cert-manager.io", Order: "acme.cert-manager.io", Challenge: "acme.cert-manager.io", ClusterIssuer: "cert-manager.io", HTTPRoute: "gateway.networking.k8s.io", GatewayClass: "gateway.networking.k8s.io", Application: "argoproj.io", Rollout: "argoproj.io", AnalysisRun: "argoproj.io", ServiceMonitor: "monitoring.coreos.com", NodePool: "karpenter.sh" };
   const ALIAS = {};
   for (const [k, names] of Object.entries(KINDS)) for (const n of names) ALIAS[n] = k;
   const kindOf = (s) => ALIAS[String(s).toLowerCase().split(".")[0]];
@@ -193,7 +193,10 @@ const KUBE = (() => {
       try { docs = YAML.parseAll(text); } catch (e) { return { err: e.message }; }
       if (!docs.length) return { err: "error: no objects passed to apply" };
       const out = [], bad = [];
-      for (const d of docs) { const r = applyDoc(d, partId && docs.length === 1 ? partId : null); if (r.err) bad.push(r.err); else out.push(r.ok); }
+      // a part with several documents (e.g. two kustomization files) pairs them by position
+      let befores = null;
+      if (partId && docs.length > 1) { try { befores = String(val(S.PARTS[partId].manifest)).split(/^---\s*$/m).filter((t) => { try { return YAML.parse(t) != null; } catch (e) { return false; } }); } catch (e) {} }
+      docs.forEach((d, i) => { const r = befores && befores.length === docs.length && !(d.kind && KINDS[d.kind]) ? applyDoc(d, partId, befores[i]) : applyDoc(d, partId && docs.length === 1 ? partId : null); if (r.err) bad.push(r.err); else out.push(r.ok); });
       S.renderPanel?.();
       return bad.length ? { err: [...out, ...bad].join("\n") } : { ok: out.join("\n") };
     };
