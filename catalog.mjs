@@ -10,7 +10,7 @@ export const TRACKS = [
   {
     id: "kubernetes",
     title: "Kubernetes",
-    blurb: "From containers to production: the 50 core concepts for beginners, then the real stack around them. CDN and load balancers, DNS and TLS automation, GitOps with blue-green and canary releases, observability, and platform internals.",
+    blurb: "From containers to production: the 50 core concepts for beginners, then the real stack around them. CDN and load balancers, DNS and TLS automation, GitOps with blue-green and canary releases, observability, platform internals, and an Amazon EKS deep dive.",
     // Each lesson lists the beginner concepts it teaches. Lesson 2 is an overview figure that previews
     // many of them at once; the lessons after it go deeper one area at a time.
     lessons: [
@@ -89,6 +89,9 @@ export const TRACKS = [
       { slug: "eks-storage", title: "Storage on EKS: EBS, EFS & AZs", status: "live", minutes: 12,
         goal: "Use EBS and EFS through their CSI drivers, understand why EBS volumes pin pods to one AZ, and move data between AZs with snapshots.",
         concepts: ["EBS CSI driver", "gp3 StorageClass", "Volume binding modes", "AZ-bound volumes & node affinity", "EFS & ReadWriteMany", "VolumeSnapshots & restore", "Volume expansion"] },
+      { slug: "eks-upgrade", title: "Upgrading EKS", status: "live", minutes: 12,
+        goal: "Upgrade an EKS cluster safely: find removed APIs with upgrade insights, then upgrade the control plane, add-ons and nodes in order, one minor version at a time.",
+        concepts: ["EKS upgrade insights", "Deprecated & removed APIs", "Control plane upgrades", "Add-on compatibility", "Node group rolling updates", "Version skew policy", "Standard vs extended support"] },
     ],
   },
   {
