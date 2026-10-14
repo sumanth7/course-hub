@@ -65,6 +65,9 @@ export const TRACKS = [
       { slug: "production", title: "Production: CDN to pod", status: "live", minutes: 15,
         goal: "Follow one request from DNS through a CDN edge (CloudFront or Akamai), its WAF and cache, an ALB across three zones, to a pod, and watch each layer absorb a failure.",
         concepts: ["DNS & CNAMEs", "CDN edge caching", "Cache invalidation", "WAF", "TLS at the edge & to the origin", "ALB listeners & target groups", "AWS Load Balancer Controller", "VPC CNI pod IPs", "Multi-AZ & topology spread", "Health checks & failover"] },
+      { slug: "edge", title: "Edge: DNS, TLS & Gateway API", status: "live", minutes: 12,
+        goal: "See how external-dns, cert-manager and a Gateway controller turn YAML into DNS records, a trusted certificate and a load balancer, and how Gateway API splits traffic.",
+        concepts: ["external-dns", "cert-manager & ACME", "DNS-01 challenges", "Certificate renewal", "Gateway API (GatewayClass, Gateway, HTTPRoute)", "Traffic splitting & header matching", "Ingress vs Gateway API"] },
     ],
   },
   {

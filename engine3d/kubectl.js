@@ -16,16 +16,17 @@ const KUBE = (() => {
     ServiceAccount: ["serviceaccounts", "serviceaccount", "sa"], Namespace: ["namespaces", "namespace", "ns"], Event: ["events", "event", "ev"],
     TargetGroupBinding: ["targetgroupbindings", "targetgroupbinding", "tgb"], IngressClass: ["ingressclasses", "ingressclass"], PodDisruptionBudget: ["poddisruptionbudgets", "poddisruptionbudget", "pdb"],
     ResourceQuota: ["resourcequotas", "resourcequota", "quota"], LimitRange: ["limitranges", "limitrange", "limits"], CustomResourceDefinition: ["customresourcedefinitions", "customresourcedefinition", "crd"],
-    Certificate: ["certificates", "certificate", "cert"], ClusterIssuer: ["clusterissuers", "clusterissuer"], HTTPRoute: ["httproutes", "httproute"], GatewayClass: ["gatewayclasses", "gatewayclass", "gc"],
+    Certificate: ["certificates", "certificate", "cert"], CertificateRequest: ["certificaterequests", "certificaterequest", "cr"], Order: ["orders", "order"], Challenge: ["challenges", "challenge"], ClusterIssuer: ["clusterissuers", "clusterissuer"], HTTPRoute: ["httproutes", "httproute"], GatewayClass: ["gatewayclasses", "gatewayclass", "gc"],
     Application: ["applications", "application", "app"], Rollout: ["rollouts", "rollout", "ro"], ServiceMonitor: ["servicemonitors", "servicemonitor", "smon"], NodePool: ["nodepools", "nodepool"],
     Gateway: ["gateways", "gateway", "gw"], VirtualService: ["virtualservices", "virtualservice", "vs"], DestinationRule: ["destinationrules", "destinationrule", "dr"],
   };
-  const GROUP = { Deployment: "apps", ReplicaSet: "apps", StatefulSet: "apps", DaemonSet: "apps", Job: "batch", CronJob: "batch", Ingress: "networking.k8s.io", NetworkPolicy: "networking.k8s.io", HorizontalPodAutoscaler: "autoscaling", Role: "rbac.authorization.k8s.io", RoleBinding: "rbac.authorization.k8s.io", ClusterRole: "rbac.authorization.k8s.io", ClusterRoleBinding: "rbac.authorization.k8s.io", StorageClass: "storage.k8s.io", EndpointSlice: "discovery.k8s.io", Gateway: "networking.istio.io", VirtualService: "networking.istio.io", DestinationRule: "networking.istio.io", TargetGroupBinding: "elbv2.k8s.aws", IngressClass: "networking.k8s.io", PodDisruptionBudget: "policy", CustomResourceDefinition: "apiextensions.k8s.io", Certificate: "cert-manager.io", ClusterIssuer: "cert-manager.io", HTTPRoute: "gateway.networking.k8s.io", GatewayClass: "gateway.networking.k8s.io", Application: "argoproj.io", Rollout: "argoproj.io", ServiceMonitor: "monitoring.coreos.com", NodePool: "karpenter.sh" };
+  const GROUP = { Deployment: "apps", ReplicaSet: "apps", StatefulSet: "apps", DaemonSet: "apps", Job: "batch", CronJob: "batch", Ingress: "networking.k8s.io", NetworkPolicy: "networking.k8s.io", HorizontalPodAutoscaler: "autoscaling", Role: "rbac.authorization.k8s.io", RoleBinding: "rbac.authorization.k8s.io", ClusterRole: "rbac.authorization.k8s.io", ClusterRoleBinding: "rbac.authorization.k8s.io", StorageClass: "storage.k8s.io", EndpointSlice: "discovery.k8s.io", Gateway: "networking.istio.io", VirtualService: "networking.istio.io", DestinationRule: "networking.istio.io", TargetGroupBinding: "elbv2.k8s.aws", IngressClass: "networking.k8s.io", PodDisruptionBudget: "policy", CustomResourceDefinition: "apiextensions.k8s.io", Certificate: "cert-manager.io", CertificateRequest: "cert-manager.io", Order: "acme.cert-manager.io", Challenge: "acme.cert-manager.io", ClusterIssuer: "cert-manager.io", HTTPRoute: "gateway.networking.k8s.io", GatewayClass: "gateway.networking.k8s.io", Application: "argoproj.io", Rollout: "argoproj.io", ServiceMonitor: "monitoring.coreos.com", NodePool: "karpenter.sh" };
   const ALIAS = {};
   for (const [k, names] of Object.entries(KINDS)) for (const n of names) ALIAS[n] = k;
   const kindOf = (s) => ALIAS[String(s).toLowerCase().split(".")[0]];
   const plural = (k) => (KINDS[k] ? KINDS[k][0] : String(k).toLowerCase());
-  const ref = (k) => (KINDS[k] ? KINDS[k][1] : String(k).toLowerCase()) + (GROUP[k] ? "." + GROUP[k] : "");
+  let GROUP_OVERRIDE = {};
+  const ref = (k) => (KINDS[k] ? KINDS[k][1] : String(k).toLowerCase()) + ((GROUP_OVERRIDE[k] ?? GROUP[k]) ? "." + (GROUP_OVERRIDE[k] ?? GROUP[k]) : "");
   const lc = (k) => (KINDS[k] ? KINDS[k][1] : String(k).toLowerCase());
   const pad = (rows) => { const w = []; rows.forEach((r) => r.forEach((c, i) => (w[i] = Math.max(w[i] || 0, String(c).length)))); return rows.map((r) => r.map((c, i) => (i === r.length - 1 ? String(c) : String(c).padEnd(w[i] + 3))).join("")); };
   const age = (s) => (s < 120 ? Math.max(1, Math.floor(s)) + "s" : s < 7200 ? Math.floor(s / 60) + "m" : Math.floor(s / 3600) + "h");
@@ -88,6 +89,11 @@ const KUBE = (() => {
     PodDisruptionBudget: (d) => ({ row: { "MIN AVAILABLE": g(d, "spec.minAvailable", "N/A"), "MAX UNAVAILABLE": g(d, "spec.maxUnavailable", "N/A"), "ALLOWED DISRUPTIONS": g(d, "status.disruptionsAllowed", 0) } }),
     Certificate: (d) => ({ row: { READY: (g(d, "status.conditions", []).find((c) => c.type === "Ready") || {}).status || "False", SECRET: g(d, "spec.secretName", "") } }),
     HTTPRoute: (d) => ({ row: { HOSTNAMES: JSON.stringify(g(d, "spec.hostnames", [])) } }),
+    Gateway: (d) => (g(d, "spec.gatewayClassName") ? { row: { CLASS: g(d, "spec.gatewayClassName", ""), ADDRESS: g(d, "status.addresses[0].value", ""), PROGRAMMED: (g(d, "status.conditions", []).find((c) => c.type === "Programmed") || {}).status || "Unknown" } } : {}),
+    GatewayClass: (d) => ({ row: { CONTROLLER: g(d, "spec.controllerName", ""), ACCEPTED: (g(d, "status.conditions", []).find((c) => c.type === "Accepted") || {}).status || "Unknown" } }),
+    Order: (d) => ({ row: { STATE: g(d, "status.state", "pending") } }),
+    Challenge: (d) => ({ row: { STATE: g(d, "status.state", "pending"), DOMAIN: g(d, "spec.dnsName", "") } }),
+    ClusterIssuer: (d) => ({ row: { READY: (g(d, "status.conditions", []).find((c) => c.type === "Ready") || {}).status || "True" } }),
     Application: (d) => ({ row: { "SYNC STATUS": g(d, "status.sync.status", "Unknown"), HEALTH: g(d, "status.health.status", "Unknown") } }),
     Rollout: (d) => ({ row: { DESIRED: g(d, "spec.replicas", 1), CURRENT: g(d, "status.replicas", 0), "UP-TO-DATE": g(d, "status.updatedReplicas", 0), AVAILABLE: g(d, "status.availableReplicas", 0) } }),
   };
@@ -100,6 +106,7 @@ const KUBE = (() => {
     S.event = (type, reason, obj, msg, from) => { events.push({ t: clock(), type, reason, obj, msg, from }); if (events.length > 300) events.shift(); };
     S.kube = (c = {}) => {
       cfg = { examples: [], verbs: {}, tools: {}, ...c };
+      GROUP_OVERRIDE = cfg.groups || {};
       if (!cfg.ns) { const count = {}; for (const o of autoObjects()) if (o.ns) count[o.ns] = (count[o.ns] || 0) + 1; cfg.ns = Object.entries(count).sort((a, b) => b[1] - a[1])[0]?.[0] || "default"; }
       if (!c.examples) { const kinds = [...new Set(objs().map((o) => o.kind))]; const first = objs().find((o) => o.part && S.PARTS[o.part] && fieldsOf(S.PARTS[o.part], o.kind, o.name)); cfg.examples = ["kubectl get all", ...kinds.slice(0, 5).map((k) => `kubectl get ${plural(k)}${k === "Pod" ? " -o wide" : ""}`), ...(objs()[0] ? [`kubectl describe ${lc(objs()[0].kind)} ${objs()[0].name}`] : []), ...(first ? [`kubectl edit ${lc(first.kind)}/${first.name}`] : []), "kubectl get events"]; }
       if (!cfg.editable) { const ed = objs().filter((o) => o.part && S.PARTS[o.part] && fieldsOf(S.PARTS[o.part], o.kind, o.name)).map((o) => `${lc(o.kind)}/${o.name}`); if (ed.length) cfg.editable = ed.join(", "); }
@@ -253,7 +260,7 @@ const KUBE = (() => {
       let k = "Pod";
       if (name.includes("/")) { k = kindOf(name.split("/")[0]); name = name.split("/")[1]; }
       let o = find(k, name, f["-n"] || cfg.ns);
-      if (o && k !== "Pod") o = objs().find((x) => x.kind === "Pod" && x.logs && Object.entries(o.labels || {}).every(([a, b]) => (x.labels || {})[a] === b));
+      if (o && k !== "Pod" && !o.logs) o = objs().find((x) => x.kind === "Pod" && x.logs && Object.entries(o.labels || {}).every(([a, b]) => (x.labels || {})[a] === b));
       if (!o) return { err: notFound(k, name) };
       if (!o.logs) { const st = (o.row || {}).STATUS; return st && st !== "Running" && st !== "Completed" ? { err: `Error from server (BadRequest): container in pod "${o.name}" is waiting to start: ${st}` } : { lines: [`# this lesson doesn't simulate log lines for ${o.name}; describe it or read its YAML instead`] }; }
       const ls = val(o.logs) || [];
