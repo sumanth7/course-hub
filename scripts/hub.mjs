@@ -20,7 +20,7 @@ function card(track, lesson, n, thumbs) {
       </span>`;
   return live
     ? lesson.has3d
-      ? `<li><a class="card is-live" data-lesson="${id}" data-3d href="${track.id}/${lesson.slug}/3d/">${inner}</a></li>`
+      ? `<li><a class="card is-live" data-lesson="${id}" data-3d href="${track.id}/${lesson.slug}/${lesson.only3d ? "" : "3d/"}">${inner}</a></li>`
       : `<li><a class="card is-live" data-lesson="${id}" data-href="${track.id}/${lesson.slug}/" href="${track.id}/${lesson.slug}/">${inner}</a></li>`
     : `<li><div class="card is-planned" data-lesson="${id}">${inner}</div></li>`;
 }

@@ -62,6 +62,9 @@ export const TRACKS = [
       { slug: "istio-ingress", title: "Beyond: Istio ingress", status: "live", minutes: 12,
         goal: "Trace a request through an Istio Gateway, VirtualService, DestinationRule and the Envoy sidecar.",
         concepts: ["Service mesh", "Gateway", "VirtualService", "DestinationRule", "mTLS & outlier detection"] },
+      { slug: "production", title: "Production: CDN to pod", status: "live", minutes: 15,
+        goal: "Follow one request from DNS through a CDN edge (CloudFront or Akamai), its WAF and cache, an ALB across three zones, to a pod, and watch each layer absorb a failure.",
+        concepts: ["DNS & CNAMEs", "CDN edge caching", "Cache invalidation", "WAF", "TLS at the edge & to the origin", "ALB listeners & target groups", "AWS Load Balancer Controller", "VPC CNI pod IPs", "Multi-AZ & topology spread", "Health checks & failover"] },
     ],
   },
   {

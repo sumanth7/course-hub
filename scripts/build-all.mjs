@@ -18,11 +18,13 @@ for (const track of TRACKS) {
   for (const [index, lesson] of track.lessons.entries()) {
     if (lesson.status !== "live") continue;
     const script = join(ROOT, "tracks", track.id, lesson.slug, "build.mjs");
-    if (!existsSync(script)) throw new Error(`${track.id}/${lesson.slug} is marked live but has no build.mjs`);
     const next = live[live.indexOf(lesson) + 1];
     const dir = join(ROOT, "tracks", track.id, lesson.slug);
     lesson.has3d = existsSync(join(dir, "scene3d.js"));
-    for (const theme of ["dark", "light"]) {
+    // a lesson may be 3D only: then its 3D page is the lesson page itself
+    lesson.only3d = lesson.has3d && !existsSync(script);
+    if (!existsSync(script) && !lesson.has3d) throw new Error(`${track.id}/${lesson.slug} is marked live but has no build.mjs or scene3d.js`);
+    if (!lesson.only3d) for (const theme of ["dark", "light"]) {
       execFileSync(process.execPath, [script, ...(theme === "light" ? ["--light"] : [])], { stdio: "inherit" });
       const file = join(OUT, track.id, lesson.slug, theme === "light" ? "index-light.html" : "index.html");
       let html = readFileSync(file, "utf8");
@@ -33,19 +35,22 @@ for (const track of TRACKS) {
     if (lesson.has3d) {
       const meta = (await import(join(dir, "lesson3d.mjs"))).default;
       const nextHas3d = next && existsSync(join(ROOT, "tracks", track.id, next.slug, "scene3d.js"));
+      const nextOnly3d = next && nextHas3d && !existsSync(join(ROOT, "tracks", track.id, next.slug, "build.mjs"));
+      const up = lesson.only3d ? "../" : "../../";
       const html = page3d({
         ...meta,
         title: lesson.title,
         trackTitle: track.title,
         lessonNo: index + 1,
         id: `${track.id}/${lesson.slug}`,
-        twoD: "../",
-        home: "../../../",
-        next: next ? { title: next.title, href: `../../${next.slug}/${nextHas3d ? "3d/" : ""}` } : null,
+        twoD: lesson.only3d ? null : "../",
+        home: lesson.only3d ? "../../" : "../../../",
+        next: next ? { title: next.title, href: `${up}${next.slug}/${nextHas3d && !nextOnly3d ? "3d/" : ""}` } : null,
         script: readFileSync(join(dir, "scene3d.js"), "utf8"),
       });
-      mkdirSync(join(OUT, track.id, lesson.slug, "3d"), { recursive: true });
-      writeFileSync(join(OUT, track.id, lesson.slug, "3d", "index.html"), html);
+      const outDir = lesson.only3d ? join(OUT, track.id, lesson.slug) : join(OUT, track.id, lesson.slug, "3d");
+      mkdirSync(outDir, { recursive: true });
+      writeFileSync(join(outDir, "index.html"), html);
       built3d++;
     }
     built++;

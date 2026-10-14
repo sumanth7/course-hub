@@ -14,14 +14,18 @@ const KUBE = (() => {
     Job: ["jobs", "job"], CronJob: ["cronjobs", "cronjob", "cj"], HorizontalPodAutoscaler: ["horizontalpodautoscalers", "horizontalpodautoscaler", "hpa"],
     Role: ["roles", "role"], RoleBinding: ["rolebindings", "rolebinding"], ClusterRole: ["clusterroles", "clusterrole"], ClusterRoleBinding: ["clusterrolebindings", "clusterrolebinding"],
     ServiceAccount: ["serviceaccounts", "serviceaccount", "sa"], Namespace: ["namespaces", "namespace", "ns"], Event: ["events", "event", "ev"],
+    TargetGroupBinding: ["targetgroupbindings", "targetgroupbinding", "tgb"], IngressClass: ["ingressclasses", "ingressclass"], PodDisruptionBudget: ["poddisruptionbudgets", "poddisruptionbudget", "pdb"],
+    ResourceQuota: ["resourcequotas", "resourcequota", "quota"], LimitRange: ["limitranges", "limitrange", "limits"], CustomResourceDefinition: ["customresourcedefinitions", "customresourcedefinition", "crd"],
+    Certificate: ["certificates", "certificate", "cert"], ClusterIssuer: ["clusterissuers", "clusterissuer"], HTTPRoute: ["httproutes", "httproute"], GatewayClass: ["gatewayclasses", "gatewayclass", "gc"],
+    Application: ["applications", "application", "app"], Rollout: ["rollouts", "rollout", "ro"], ServiceMonitor: ["servicemonitors", "servicemonitor", "smon"], NodePool: ["nodepools", "nodepool"],
     Gateway: ["gateways", "gateway", "gw"], VirtualService: ["virtualservices", "virtualservice", "vs"], DestinationRule: ["destinationrules", "destinationrule", "dr"],
   };
-  const GROUP = { Deployment: "apps", ReplicaSet: "apps", StatefulSet: "apps", DaemonSet: "apps", Job: "batch", CronJob: "batch", Ingress: "networking.k8s.io", NetworkPolicy: "networking.k8s.io", HorizontalPodAutoscaler: "autoscaling", Role: "rbac.authorization.k8s.io", RoleBinding: "rbac.authorization.k8s.io", ClusterRole: "rbac.authorization.k8s.io", ClusterRoleBinding: "rbac.authorization.k8s.io", StorageClass: "storage.k8s.io", EndpointSlice: "discovery.k8s.io", Gateway: "networking.istio.io", VirtualService: "networking.istio.io", DestinationRule: "networking.istio.io" };
+  const GROUP = { Deployment: "apps", ReplicaSet: "apps", StatefulSet: "apps", DaemonSet: "apps", Job: "batch", CronJob: "batch", Ingress: "networking.k8s.io", NetworkPolicy: "networking.k8s.io", HorizontalPodAutoscaler: "autoscaling", Role: "rbac.authorization.k8s.io", RoleBinding: "rbac.authorization.k8s.io", ClusterRole: "rbac.authorization.k8s.io", ClusterRoleBinding: "rbac.authorization.k8s.io", StorageClass: "storage.k8s.io", EndpointSlice: "discovery.k8s.io", Gateway: "networking.istio.io", VirtualService: "networking.istio.io", DestinationRule: "networking.istio.io", TargetGroupBinding: "elbv2.k8s.aws", IngressClass: "networking.k8s.io", PodDisruptionBudget: "policy", CustomResourceDefinition: "apiextensions.k8s.io", Certificate: "cert-manager.io", ClusterIssuer: "cert-manager.io", HTTPRoute: "gateway.networking.k8s.io", GatewayClass: "gateway.networking.k8s.io", Application: "argoproj.io", Rollout: "argoproj.io", ServiceMonitor: "monitoring.coreos.com", NodePool: "karpenter.sh" };
   const ALIAS = {};
   for (const [k, names] of Object.entries(KINDS)) for (const n of names) ALIAS[n] = k;
   const kindOf = (s) => ALIAS[String(s).toLowerCase().split(".")[0]];
   const plural = (k) => (KINDS[k] ? KINDS[k][0] : String(k).toLowerCase());
-  const ref = (k) => plural(k).replace(/s$/, "").replace(/ie$/, "y") + (GROUP[k] ? "." + GROUP[k] : "");
+  const ref = (k) => (KINDS[k] ? KINDS[k][1] : String(k).toLowerCase()) + (GROUP[k] ? "." + GROUP[k] : "");
   const lc = (k) => (KINDS[k] ? KINDS[k][1] : String(k).toLowerCase());
   const pad = (rows) => { const w = []; rows.forEach((r) => r.forEach((c, i) => (w[i] = Math.max(w[i] || 0, String(c).length)))); return rows.map((r) => r.map((c, i) => (i === r.length - 1 ? String(c) : String(c).padEnd(w[i] + 3))).join("")); };
   const age = (s) => (s < 120 ? Math.max(1, Math.floor(s)) + "s" : s < 7200 ? Math.floor(s / 60) + "m" : Math.floor(s / 3600) + "h");
@@ -38,7 +42,7 @@ const KUBE = (() => {
     if (cur || any) out.push(cur);
     return out;
   }
-  const TAKES = new Set(["--raw", "--role", "--clusterrole", "--user", "--serviceaccount", "-H", "-p", "--patch", "--from", "-o", "--output", "-n", "--namespace", "-l", "--selector", "-f", "--filename", "--replicas", "--to-revision", "-c", "--container", "--tail", "--field-selector", "--as", "--sort-by", "--image", "--revision", "--set"]);
+  const TAKES = new Set(["--target-group-arn", "--paths", "--distribution-id", "--id", "--experiment-template-id", "--raw", "--role", "--clusterrole", "--user", "--serviceaccount", "-H", "-p", "--patch", "--from", "-o", "--output", "-n", "--namespace", "-l", "--selector", "-f", "--filename", "--replicas", "--to-revision", "-c", "--container", "--tail", "--field-selector", "--as", "--sort-by", "--image", "--revision", "--set"]);
   function parseArgs(ws) {
     const pos = [], f = {};
     for (let i = 0; i < ws.length; i++) {
@@ -51,7 +55,7 @@ const KUBE = (() => {
     for (const [a, b] of Object.entries(alias)) if (a in f) f[b] = f[a];
     return { pos, f };
   }
-  const CLUSTER = new Set(["Node", "PersistentVolume", "StorageClass", "Namespace", "ClusterRole", "ClusterRoleBinding"]);
+  const CLUSTER = new Set(["Node", "PersistentVolume", "StorageClass", "Namespace", "ClusterRole", "ClusterRoleBinding", "IngressClass", "CustomResourceDefinition", "ClusterIssuer", "GatewayClass", "NodePool"]);
   const g = (o, path, d) => { const v = YAML.get(o, path); return v === undefined || v === null || v === "" ? d : v; };
   // the columns kubectl prints for each kind, read from the object's YAML
   const ROWS = {
@@ -63,7 +67,7 @@ const KUBE = (() => {
     Job: (d) => { const done = g(d, "status.succeeded", 0), want = g(d, "spec.completions", 1); return { row: { STATUS: done >= want ? "Complete" : g(d, "status.failed", 0) > 6 ? "Failed" : "Running", COMPLETIONS: `${done}/${want}` } }; },
     CronJob: (d) => ({ row: { SCHEDULE: g(d, "spec.schedule", ""), SUSPEND: String(g(d, "spec.suspend", false)), ACTIVE: 0 } }),
     Service: (d) => { const p = g(d, "spec.ports", [{}])[0] || {}; return { row: { TYPE: g(d, "spec.type", "ClusterIP"), "CLUSTER-IP": g(d, "spec.clusterIP", "<none>"), "EXTERNAL-IP": g(d, "status.loadBalancer.ingress[0].ip", g(d, "spec.type") === "LoadBalancer" ? "<pending>" : "<none>"), "PORT(S)": `${p.port || 80}${p.nodePort ? ":" + p.nodePort : ""}/TCP` }, wide: { SELECTOR: Object.entries(g(d, "spec.selector", {})).map(([a, b]) => `${a}=${b}`).join(",") } }; },
-    Ingress: (d) => ({ row: { CLASS: g(d, "spec.ingressClassName", "<none>"), HOSTS: g(d, "spec.rules", []).map((r) => r.host).join(","), ADDRESS: g(d, "status.loadBalancer.ingress[0].ip", ""), PORTS: g(d, "spec.tls") ? "80, 443" : "80" } }),
+    Ingress: (d) => ({ row: { CLASS: g(d, "spec.ingressClassName", "<none>"), HOSTS: g(d, "spec.rules", []).map((r) => r.host).join(","), ADDRESS: g(d, "status.loadBalancer.ingress[0].ip", g(d, "status.loadBalancer.ingress[0].hostname", "")), PORTS: g(d, "spec.tls") ? "80, 443" : "80" } }),
     NetworkPolicy: (d) => ({ row: { "POD-SELECTOR": Object.entries(g(d, "spec.podSelector.matchLabels", {})).map(([a, b]) => `${a}=${b}`).join(",") || "<none>" } }),
     ConfigMap: (d) => ({ row: { DATA: Object.keys(g(d, "data", {})).length } }),
     Secret: (d) => ({ row: { TYPE: g(d, "type", "Opaque"), DATA: Object.keys(g(d, "data", {})).length } }),
@@ -79,6 +83,13 @@ const KUBE = (() => {
     EndpointSlice: (d) => ({ row: { ADDRESSTYPE: g(d, "addressType", "IPv4"), PORTS: g(d, "ports", []).map((p) => p.port).join(","), ENDPOINTS: g(d, "endpoints", []).flatMap((e) => e.addresses || []).join(",") || "<unset>" } }),
     VirtualService: (d) => ({ row: { GATEWAYS: JSON.stringify(g(d, "spec.gateways", [])).replace(/"/g, '"'), HOSTS: JSON.stringify(g(d, "spec.hosts", [])) } }),
     DestinationRule: (d) => ({ row: { HOST: g(d, "spec.host", "") } }),
+    TargetGroupBinding: (d) => ({ row: { "SERVICE-NAME": g(d, "spec.serviceRef.name", ""), "SERVICE-PORT": g(d, "spec.serviceRef.port", ""), "TARGET-TYPE": g(d, "spec.targetType", "") } }),
+    IngressClass: (d) => ({ row: { CONTROLLER: g(d, "spec.controller", ""), PARAMETERS: "<none>" } }),
+    PodDisruptionBudget: (d) => ({ row: { "MIN AVAILABLE": g(d, "spec.minAvailable", "N/A"), "MAX UNAVAILABLE": g(d, "spec.maxUnavailable", "N/A"), "ALLOWED DISRUPTIONS": g(d, "status.disruptionsAllowed", 0) } }),
+    Certificate: (d) => ({ row: { READY: (g(d, "status.conditions", []).find((c) => c.type === "Ready") || {}).status || "False", SECRET: g(d, "spec.secretName", "") } }),
+    HTTPRoute: (d) => ({ row: { HOSTNAMES: JSON.stringify(g(d, "spec.hostnames", [])) } }),
+    Application: (d) => ({ row: { "SYNC STATUS": g(d, "status.sync.status", "Unknown"), HEALTH: g(d, "status.health.status", "Unknown") } }),
+    Rollout: (d) => ({ row: { DESIRED: g(d, "spec.replicas", 1), CURRENT: g(d, "status.replicas", 0), "UP-TO-DATE": g(d, "status.updatedReplicas", 0), AVAILABLE: g(d, "status.availableReplicas", 0) } }),
   };
   const SKIP = /^(status\b|metadata\.(uid|annotations|resourceVersion|creationTimestamp|generation|managedFields|ownerReferences)\b)/;
 
@@ -149,12 +160,13 @@ const KUBE = (() => {
       const before = YAML.flatten(YAML.parse(beforeText ?? (partId ? val(p.manifest) : manifestOf(o))) || {}), after = YAML.flatten(doc);
       const k = kindOf(o.kind) || o.kind, label = `${ref(k) || o.kind}/${o.name}`;
       if (name && before["metadata.name"] && name !== before["metadata.name"]) return { err: `Error from server (Forbidden): this lesson can't create ${lc(k)} "${name}"; to change ${lc(k)}/${before["metadata.name"]} keep metadata.name: ${before["metadata.name"]}` };
-      const paths = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((x) => !SKIP.test(x) && String(before[x]) !== String(after[x]));
+      const fieldFor = (path) => fields[path] || Object.entries(fields).find(([k]) => k.endsWith("*") && path.startsWith(k.slice(0, -1)))?.[1];
+      const paths = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((x) => (!SKIP.test(x) || fieldFor(x)) && String(before[x]) !== String(after[x]));
       const errs = [], sets = [], ignored = [];
       for (const path of paths) {
         if ((p.immutable || []).some((im) => path === im || path.startsWith(im + ".") || path.startsWith(im + "["))) { errs.push(`${path}: Invalid value: ${JSON.stringify(after[path] ?? null)}: field is immutable`); continue; }
         // a field is matched exactly, or by a "prefix.*" pattern (e.g. "metadata.labels.*")
-        const fd = fields[path] || Object.entries(fields).find(([k]) => k.endsWith("*") && path.startsWith(k.slice(0, -1)))?.[1];
+        const fd = fieldFor(path);
         if (!fd) { ignored.push(path); continue; }
         const v = after[path];
         if (v === undefined && !fd.optional) { errs.push(`${path}: Required value`); continue; }
