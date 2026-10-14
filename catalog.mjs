@@ -86,6 +86,9 @@ export const TRACKS = [
       { slug: "eks-iam", title: "IAM on EKS: access entries, IRSA & Pod Identity", status: "live", minutes: 14,
         goal: "Follow how IAM identities get into an EKS cluster through access entries, and how pods get IAM roles through IRSA or EKS Pod Identity instead of the node's role.",
         concepts: ["aws eks get-token & the authenticator", "Access entries & access policies", "aws-auth ConfigMap (legacy)", "IMDS & the node role", "IRSA (OIDC, AssumeRoleWithWebIdentity)", "EKS Pod Identity", "Least-privilege pod roles"] },
+      { slug: "eks-storage", title: "Storage on EKS: EBS, EFS & AZs", status: "live", minutes: 12,
+        goal: "Use EBS and EFS through their CSI drivers, understand why EBS volumes pin pods to one AZ, and move data between AZs with snapshots.",
+        concepts: ["EBS CSI driver", "gp3 StorageClass", "Volume binding modes", "AZ-bound volumes & node affinity", "EFS & ReadWriteMany", "VolumeSnapshots & restore", "Volume expansion"] },
     ],
   },
   {
