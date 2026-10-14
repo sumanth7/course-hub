@@ -133,7 +133,7 @@ footer { margin-top: 56px; padding-block: 24px 40px; border-top: 1px solid var(-
     <p>${esc(site.tagline)}</p>
     <div class="progress"><span class="bar" aria-hidden="true"><span id="bar"></span></span><span id="overall" aria-live="polite">0 of ${total} live lessons complete</span></div>
     <ul class="jump">${tracks.map((t) => `<li><a href="#${t.id}">${esc(t.title)}</a></li>`).join("")}</ul>
-    <p class="proto"><a href="kubernetes/cluster-yard/3d/">New: every lesson is now 3D →</a> <span>rotate, zoom, take parts apart, or take a guided tour</span></p>
+    <p class="proto"><a href="kubernetes/production/">New: a request in production, CDN to pod →</a> <span>plus edge, delivery, observability and platform lessons, each with a live terminal</span></p>
   </header>
   ${sections}
   <footer>Progress is saved in this browser only. Each lesson has a dark and a light version; the hub opens the one that matches your theme.</footer>

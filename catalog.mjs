@@ -10,7 +10,7 @@ export const TRACKS = [
   {
     id: "kubernetes",
     title: "Kubernetes",
-    blurb: "A beginner's path through 50 core concepts: from containers to the control plane, workloads, networking, config, health, storage, scaling, security and day-to-day operation.",
+    blurb: "From containers to production: the 50 core concepts for beginners, then the real stack around them. CDN and load balancers, DNS and TLS automation, GitOps with blue-green and canary releases, observability, and platform internals.",
     // Each lesson lists the beginner concepts it teaches. Lesson 2 is an overview figure that previews
     // many of them at once; the lessons after it go deeper one area at a time.
     lessons: [
@@ -74,6 +74,9 @@ export const TRACKS = [
       { slug: "observability", title: "Observability & reliability", status: "live", minutes: 14,
         goal: "Use metrics, logs and traces to find what's wrong, and keep an app up through node upgrades with PodDisruptionBudgets and topology spread.",
         concepts: ["Metrics & Prometheus", "PromQL & SLO alerts", "Logs with Fluent Bit & Loki", "Distributed tracing (OpenTelemetry, Tempo)", "Grafana dashboards", "PodDisruptionBudgets", "Topology spread across zones", "Node upgrades & drains"] },
+      { slug: "platform", title: "Platform: CRDs, operators, quotas & Karpenter", status: "live", minutes: 14,
+        goal: "Extend Kubernetes with a CRD and an operator, share a cluster fairly with quotas and limit ranges, and let Karpenter fit nodes to pods.",
+        concepts: ["CustomResourceDefinitions", "Operators", "ResourceQuotas", "LimitRanges", "Multi-tenancy", "Karpenter provisioning", "Consolidation"] },
     ],
   },
   {
