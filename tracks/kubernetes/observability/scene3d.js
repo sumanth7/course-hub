@@ -1,7 +1,7 @@
 // Lesson 20 in 3D: observability and reliability. A three-tier app (frontend → checkout → payments) on three
 // nodes in three zones, watched by Prometheus (metrics), Loki (logs) and Tempo (traces), shown on a Grafana
 // screen, with Alertmanager. Then a node upgrade that drains nodes, held back by PodDisruptionBudgets.
-const S = createStage({ home: { target: [6, 12, 4], dir: [0.9, 1.1, 1.15], zoom: 1 }, viewH: 280 });
+const S = createStage({ home: { target: [22, 12, 4], dir: [0.9, 1.1, 1.15], zoom: 1 }, viewH: 280 });
 const { box, cyl, lamp, crate, housing, track, part, own, label } = S;
 
 const FY = 1.9, TOP = 11, LANE = 92;
@@ -209,7 +209,7 @@ status:
   currentHealthy: ${ready(app).length}
   desiredHealthy: ${M.minAvail[app]}
   disruptionsAllowed: ${Math.max(0, ready(app).length - M.minAvail[app])}   # ← how many may go right now`;
-const PDB_FIELDS = { "spec.minAvailable": { check: (v, all) => (!Number.isInteger(v) || v < 0 ? "must be a whole number ≥ 0" : v > APPS[all["metadata.name"]]?.n ? `more than the ${APPS[all["metadata.name"]].n} replicas: no drain could ever evict one` : ""), set: (v, all) => { M.minAvail[all["metadata.name"]] = v; } } };
+const PDB_FIELDS = { "spec.minAvailable": { check: (v, all) => (!Number.isInteger(v) || v < 0 ? "must be a whole number ≥ 0" : v > APPS[all["metadata.name"]]?.n ? `more than the ${APPS[all["metadata.name"]].n} replicas: no drain could ever evict one` : ""), set: (v, all) => { M.minAvail[all["metadata.name"]] = v; if (v === APPS[all["metadata.name"]].n) msg = `minAvailable ${v} equals the ${all["metadata.name"]} replica count: no eviction is ever allowed, so draining any node that runs it will hang. A classic stuck upgrade.`; } } };
 const deployY = (app) => K.deployment({ name: app, ns: "shop", replicas: APPS[app].n, image: `111122223333.dkr.ecr.us-east-1.amazonaws.com/${app}:2.4.0`, ready: ready(app).length }).replace("        ports: [{ containerPort: 8080 }]", `        ports: [{ containerPort: 8080, name: metrics }]\n${M.spread ? "      topologySpreadConstraints:   # ← keep replicas even across zones\n      - { maxSkew: 1, topologyKey: topology.kubernetes.io/zone, whenUnsatisfiable: DoNotSchedule, labelSelector: { matchLabels: { app: " + app + " } } }" : "      # no topologySpreadConstraints: the scheduler may pack replicas together"}`);
 Object.assign(S.PARTS.plate, { manifest: () => ["frontend", "checkout", "payments"].map((a) => pdbY(a)).join("\n---\n") + "\n---\n" + ["frontend", "checkout", "payments"].map(deployY).join("\n---\n"), fields: (kind) => (kind === "PodDisruptionBudget" ? PDB_FIELDS : null) });
 Object.assign(S.PARTS.prom, { manifest: () => `apiVersion: monitoring.coreos.com/v1
