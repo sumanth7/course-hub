@@ -71,6 +71,9 @@ export const TRACKS = [
       { slug: "delivery", title: "Delivery: GitOps, blue-green & canary", status: "live", minutes: 14,
         goal: "Follow a change from commit to production through CI, Git, Kustomize and Argo CD, and release it safely with blue-green or canary.",
         concepts: ["CI/CD & image promotion", "GitOps with Argo CD", "Kustomize overlays", "Drift & self-heal", "Blue-green deployments", "Canary releases", "Automated analysis & rollback"] },
+      { slug: "observability", title: "Observability & reliability", status: "live", minutes: 14,
+        goal: "Use metrics, logs and traces to find what's wrong, and keep an app up through node upgrades with PodDisruptionBudgets and topology spread.",
+        concepts: ["Metrics & Prometheus", "PromQL & SLO alerts", "Logs with Fluent Bit & Loki", "Distributed tracing (OpenTelemetry, Tempo)", "Grafana dashboards", "PodDisruptionBudgets", "Topology spread across zones", "Node upgrades & drains"] },
     ],
   },
   {
