@@ -92,6 +92,9 @@ export const TRACKS = [
       { slug: "eks-upgrade", title: "Upgrading EKS", status: "live", minutes: 12,
         goal: "Upgrade an EKS cluster safely: find removed APIs with upgrade insights, then upgrade the control plane, add-ons and nodes in order, one minor version at a time.",
         concepts: ["EKS upgrade insights", "Deprecated & removed APIs", "Control plane upgrades", "Add-on compatibility", "Node group rolling updates", "Version skew policy", "Standard vs extended support"] },
+      { slug: "eks-load-balancing", title: "Load balancing on EKS: ALB, NLB & target types", status: "live", minutes: 12,
+        goal: "See how the AWS Load Balancer Controller builds ALBs and NLBs in tagged subnets, why ip targets skip the kube-proxy hop that instance targets take, and how readiness gates keep rollouts from dropping requests.",
+        concepts: ["AWS Load Balancer Controller", "ALB from Ingress, NLB from Service", "Target type instance vs ip", "NodePort & the kube-proxy hop", "Subnet discovery tags", "Pod readiness gates", "Target registration & deregistration"] },
     ],
   },
   {
